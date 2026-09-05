@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only testing for 3 new features + regression: (A) tech payment_status PATCH, (B) signature upload + /files GET, (C) regression on termite auto-reminder and manager charges stripping. Created /app/backend/tests/test_payment_status_signature.py with 18 targeted tests across 4 classes. All 18/18 PASSED (100%). Verified: assigned technician can PATCH payment_status to 'paid' and 'unpaid' (persisted in GET); different (non-assigned) technician gets 403 on PATCH; technician PATCH with charges=9999+payment_status=paid succeeds only for payment_status (charges unchanged at 2000, payment_status flipped to paid); technician PATCH with ONLY charges (disallowed field) correctly returns 400 'Nothing to update'. Signature endpoint POST /api/services/{sid}/signature accepts multipart 'file', stores via Emergent Object Storage, and sets service.signature_path + signature_at; GET /api/files/{path}?token=<admin_jwt> returns 200 with image content-type and non-empty bytes; missing token returns 401; malformed token returns 401; non-assigned tech signature upload returns 403; unauthenticated signature upload returns 401. Regression: manager POST /api/services with charges=5000 returns charges=0 (properly stripped); admin creates+uploads before/after photos+completes a Termite service and exactly 1 auto reminder is created with service_type='Termite', auto_source='termite_annual', status='upcoming', source_service_id=<sid>.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payment_status_signature.py",
+    "/app/test_reports/pytest/payment_signature_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py update_service (line 452-460): When a technician sends only disallowed fields (e.g. only charges), server correctly returns 400 'Nothing to update'. Good defensive behavior. However, silently dropping disallowed fields when at least one allowed field is present (e.g., tech sends {charges:9999, payment_status:'paid'} → charges dropped, payment_status applied, returns 200) may hide client bugs. Consider returning 400 or logging when disallowed fields are submitted by non-admins.",
+    "server.py upload_signature (line 502-515): No content-type/extension whitelist and no size limit. Any arbitrary file (executable, huge blob) can be uploaded and served back through /api/files. Consider validating content_type startswith('image/'), capping len(data), and sanitizing ext to a known set (png/jpg/jpeg/webp).",
+    "server.py get_file (line 535-550): Any authenticated user (technician, manager, admin) with any valid JWT can fetch ANY object path if they know/guess it. Path-based access with a JWT-only gate means a technician could fetch another customer's signature or photos if the path is leaked/guessed. Object paths use uuid4 which makes guessing hard, but consider tying the path to service ownership (lookup service by signature_path and enforce technician_id==user['id'] for technicians).",
+    "server.py get_file also does not check that the requested path lives under APP_NAME/services/ - a valid JWT can be used to read arbitrary bucket objects. Add prefix validation (path.startswith(f'{APP_NAME}/'))."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_payment_status_signature.py (new, 18 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Creates fresh TEST_-prefixed customers (3 per run), 2 technicians + 1 manager (randomized usernames), multiple services + 1 signature blob in object storage. Admin PIN was 1234 in this environment (auto-rotated to 9999 if seen as must_change). No cleanup - test data persists but is isolated by unique IDs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: `pytest /app/backend/tests/test_payment_status_signature.py -n 0 -v`. Must use -n 0 because STATE dict is shared across classes (pytest.ini defaults to -n 2 which would break sharing). Signature tests will pytest.skip cleanly if Emergent Object Storage is unavailable (upload returns 500). Admin PIN handling in _login_admin() tries '1234' then '9999'. Backend URL defaults to http://localhost:8001 (override with BACKEND_URL env var).",
+  "rca_of_issue": "N/A - no bugs found. All 3 review-scope features work as specified: technician allowed fields include payment_status (server.py:457); signature endpoint stores via Emergent Object Storage and updates service (server.py:502-515); /files endpoint accepts token via query or Bearer header (server.py:535-550); manager POST /services strips charges (server.py:428-429); termite completion triggers create_termite_reminder_if_needed (server.py:494)."
+}

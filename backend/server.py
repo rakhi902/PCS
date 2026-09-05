@@ -454,7 +454,7 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
         # Technician limited to own service progress fields
         if s.get("technician_id") != user["id"]:
             raise HTTPException(403, "Forbidden")
-        allowed = {"status", "medicine", "quantity", "technician_notes"}
+        allowed = {"status", "medicine", "quantity", "technician_notes", "payment_status"}
         upd = {k: v for k, v in upd.items() if k in allowed}
         if not upd:
             raise HTTPException(400, "Nothing to update")
@@ -498,6 +498,21 @@ async def complete_service(sid: str, inp: TechCompleteIn, user=Depends(get_user)
     })
     await audit(user, "service", sid, "complete")
     return {"ok": True}
+
+@api.post("/services/{sid}/signature")
+async def upload_signature(sid: str, file: UploadFile = File(...), user=Depends(get_user)):
+    s = await db.services.find_one({"id": sid})
+    if not s:
+        raise HTTPException(404, "Not found")
+    if user["role"] == "technician" and s.get("technician_id") != user["id"]:
+        raise HTTPException(403, "Forbidden")
+    ext = (file.filename or "sig.png").split(".")[-1].lower() or "png"
+    path = f"{APP_NAME}/services/{sid}/signature/{new_id()}.{ext}"
+    data = await file.read()
+    await run_in_threadpool(_put_object_sync, path, data, file.content_type or "image/png")
+    await db.services.update_one({"id": sid}, {"$set": {"signature_path": path, "signature_at": now_utc().isoformat()}})
+    await audit(user, "service", sid, "signature")
+    return {"path": path}
 
 # ---------- Photos ----------
 @api.post("/services/{sid}/photos")

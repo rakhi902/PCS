@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, FlatList, Pressable, RefreshControl, ScrollView } from "react-native";
+import { View, Text, FlatList, Pressable, RefreshControl, ScrollView, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +28,21 @@ export default function Reminders() {
     try { await api.createReminder({ customer_id: cust, service_type: type, due_date: date, notes }); setCust(""); setNotes(""); refetch(); } finally { setBusy(false); }
   };
   const done = async (id: string) => { await api.completeReminder(id); refetch(); };
+
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const nudge = (item: any) => {
+    const due = new Date(item.due_date);
+    const dueStr = `${String(due.getDate()).padStart(2, "0")}/${String(due.getMonth() + 1).padStart(2, "0")}/${due.getFullYear()}`;
+    const gUrl = settings?.google_review_url || "";
+    const defaultTmpl = "Hi {name}, this is a friendly reminder that your {service_type} service is due on {due_date}. Please contact us to schedule. {link}";
+    const tmpl = (settings?.whatsapp_template && settings.whatsapp_template.includes("{due_date}") ? settings.whatsapp_template : defaultTmpl)
+      .replace("{name}", item.customer_name || "there")
+      .replace("{service_type}", item.service_type || "pest control")
+      .replace("{due_date}", dueStr)
+      .replace("{link}", gUrl || "");
+    const mobile = (item.customer_mobile || "").replace(/\D/g, "");
+    Linking.openURL(`https://wa.me/${mobile}?text=${encodeURIComponent(tmpl)}`);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }}>
@@ -61,9 +76,14 @@ export default function Reminders() {
             <Text style={{ color: colors.muted, fontSize: 13 }}>{item.service_type} · Due {formatDate(item.due_date)}</Text>
             {item.notes ? <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{item.notes}</Text> : null}
             {item.status !== "completed" && (
-              <Pressable testID={`rem-done-${item.id}`} onPress={() => done(item.id)} style={{ marginTop: 8, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.brandPrimary, borderRadius: radius.pill }}>
-                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>Mark Done</Text>
-              </Pressable>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                <Pressable testID={`rem-done-${item.id}`} onPress={() => done(item.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.brandPrimary, borderRadius: radius.pill }}>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>Mark Done</Text>
+                </Pressable>
+                <Pressable testID={`rem-nudge-${item.id}`} onPress={() => nudge(item)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success, borderRadius: radius.pill }}>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>💬 Nudge on WhatsApp</Text>
+                </Pressable>
+              </View>
             )}
           </View>
         )} />

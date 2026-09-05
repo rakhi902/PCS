@@ -9,6 +9,7 @@ import { api, fileUrl, getToken } from "@/src/api";
 import { ScreenHeader, StatusBadge, PrimaryButton, LabeledInput, Chip, DateField } from "@/src/ui";
 import { formatDate, formatDateTime, inr } from "@/src/format";
 import { useAuth } from "@/src/auth";
+import { SignaturePadModal } from "@/src/signature-pad";
 
 export default function ServiceDetail() {
   const { colors } = useTheme();
@@ -33,6 +34,8 @@ export default function ServiceDetail() {
   const [serviceType, setServiceType] = useState("");
   const [scheduled, setScheduled] = useState(""); const [assignedTech, setAssignedTech] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
+  const [sigOpen, setSigOpen] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
 
   const { data: allCustomers = [] } = useQuery({ queryKey: ["custs-all"], queryFn: () => api.customers(), enabled: editing });
   const { data: types = [] } = useQuery({ queryKey: ["types"], queryFn: api.serviceTypes });
@@ -103,6 +106,22 @@ export default function ServiceDetail() {
     Linking.openURL(url);
   };
 
+  const togglePaid = async () => {
+    setPayBusy(true);
+    try {
+      const next = s.payment_status === "paid" ? "unpaid" : "paid";
+      await api.updateService(id, { payment_status: next });
+      await refetch();
+    } catch (e: any) {
+      Platform.OS === "web" ? alert(e.message) : Alert.alert("Update failed", e.message);
+    } finally { setPayBusy(false); }
+  };
+
+  const saveSignature = async (dataUrl: string) => {
+    await api.uploadSignature(id, dataUrl);
+    await refetch();
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }}>
       <ScreenHeader title="Service" back onBack={() => router.back()} right={<StatusBadge status={s.status} />} />
@@ -169,6 +188,47 @@ export default function ServiceDetail() {
           </>
         )}
 
+        {s.status === "completed" && (
+          <View style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md }}>
+            <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 8 }}>CASH COLLECTION</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.onSurface, fontWeight: "700" }}>Payment</Text>
+                <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Current: {String(s.payment_status || "unpaid").toUpperCase()}</Text>
+              </View>
+              <Pressable testID="toggle-paid" onPress={togglePaid} disabled={payBusy}
+                style={{
+                  backgroundColor: s.payment_status === "paid" ? colors.success : colors.error,
+                  paddingHorizontal: 18, paddingVertical: 12, borderRadius: radius.pill, minWidth: 140, alignItems: "center",
+                  opacity: payBusy ? 0.7 : 1,
+                }}>
+                {payBusy ? <ActivityIndicator color="#fff" /> :
+                  <Text style={{ color: "#fff", fontWeight: "800" }}>{s.payment_status === "paid" ? "✓ PAID · tap to undo" : "Mark PAID"}</Text>}
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {s.status === "completed" && (
+          <View style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md }}>
+            <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 8 }}>CUSTOMER SIGNATURE</Text>
+            {s.signature_path ? (
+              <View>
+                <Image
+                  source={{ uri: fileUrl(s.signature_path, token), headers: Platform.OS !== "web" ? { Authorization: `Bearer ${token}` } : undefined } as any}
+                  style={{ width: "100%", height: 140, borderRadius: radius.md, backgroundColor: "#fff", resizeMode: "contain" }}
+                />
+                <Text style={{ color: colors.muted, fontSize: 11, marginTop: 6 }}>Captured {formatDateTime(s.signature_at)}</Text>
+                <View style={{ marginTop: 8 }}>
+                  <PrimaryButton testID="recapture-sig" variant="ghost" label="Recapture Signature" onPress={() => setSigOpen(true)} />
+                </View>
+              </View>
+            ) : (
+              <PrimaryButton testID="capture-sig" label="✍️ Capture Customer Signature" onPress={() => setSigOpen(true)} />
+            )}
+          </View>
+        )}
+
         <View style={{ gap: 8 }}>
           {canEdit && !editing && <PrimaryButton testID="edit-svc" label="Edit Service" onPress={() => setEditing(true)} />}
           {editing && <PrimaryButton testID="save-svc" label="Save Changes" onPress={saveEdits} />}
@@ -185,6 +245,7 @@ export default function ServiceDetail() {
           )}
         </View>
       </ScrollView>
+      <SignaturePadModal visible={sigOpen} onClose={() => setSigOpen(false)} onSave={saveSignature} />
     </View>
   );
 }

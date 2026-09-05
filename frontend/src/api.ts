@@ -76,6 +76,18 @@ export const api = {
     if (!r.ok) throw new Error(`Upload failed ${r.status}`);
     return r.json();
   },
+  uploadSignature: async (id: string, dataUrl: string) => {
+    const token = await getToken();
+    const form = new FormData();
+    const name = `sig_${Date.now()}.png`;
+    const blob = await (await fetch(dataUrl)).blob();
+    form.append("file", blob, name);
+    const r = await fetch(API_URL + `/services/${id}/signature`, {
+      method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+    return r.json();
+  },
 
   amc: () => req("/amc"),
   amcDetail: (id: string) => req(`/amc/${id}`),

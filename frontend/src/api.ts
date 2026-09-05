@@ -96,6 +96,8 @@ export const api = {
   reminders: () => req("/reminders"),
   createReminder: (body: any) => req("/reminders", { method: "POST", body: JSON.stringify(body) }),
   completeReminder: (id: string) => req(`/reminders/${id}/complete`, { method: "POST" }),
+  rescheduleReminder: (id: string, due_date: string) => req(`/reminders/${id}/reschedule`, { method: "POST", body: JSON.stringify({ due_date }) }),
+  auditLogs: () => req("/audit-logs"),
 
   feedback: () => req("/feedback"),
   approveFeedback: (id: string) => req(`/feedback/${id}/approve`, { method: "POST" }),

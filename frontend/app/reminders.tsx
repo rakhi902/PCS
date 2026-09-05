@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, FlatList, Pressable, RefreshControl, ScrollView, Linking } from "react-native";
+import { View, Text, FlatList, Pressable, RefreshControl, ScrollView, Linking, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +28,14 @@ export default function Reminders() {
     try { await api.createReminder({ customer_id: cust, service_type: type, due_date: date, notes }); setCust(""); setNotes(""); refetch(); } finally { setBusy(false); }
   };
   const done = async (id: string) => { await api.completeReminder(id); refetch(); };
+
+  const [reschedFor, setReschedFor] = useState<any>(null);
+  const [newDue, setNewDue] = useState<string>("");
+  const submitResched = async () => {
+    if (!reschedFor || !newDue) return;
+    await api.rescheduleReminder(reschedFor.id, newDue);
+    setReschedFor(null); setNewDue(""); refetch();
+  };
 
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const nudge = (item: any) => {
@@ -76,17 +84,33 @@ export default function Reminders() {
             <Text style={{ color: colors.muted, fontSize: 13 }}>{item.service_type} · Due {formatDate(item.due_date)}</Text>
             {item.notes ? <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{item.notes}</Text> : null}
             {item.status !== "completed" && (
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 <Pressable testID={`rem-done-${item.id}`} onPress={() => done(item.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.brandPrimary, borderRadius: radius.pill }}>
                   <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>Mark Done</Text>
+                </Pressable>
+                <Pressable testID={`rem-resched-${item.id}`} onPress={() => { setReschedFor(item); setNewDue(item.due_date); }} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.info, borderRadius: radius.pill }}>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>📅 Reschedule</Text>
                 </Pressable>
                 <Pressable testID={`rem-nudge-${item.id}`} onPress={() => nudge(item)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success, borderRadius: radius.pill }}>
                   <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>💬 Nudge on WhatsApp</Text>
                 </Pressable>
               </View>
             )}
+            {item.previous_due_date && (
+              <Text style={{ color: colors.muted, fontSize: 11, marginTop: 6 }}>Was {formatDate(item.previous_due_date)}</Text>
+            )}
           </View>
         )} />
+      <Modal visible={!!reschedFor} transparent animationType="fade" onRequestClose={() => setReschedFor(null)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: spacing.lg }} onPress={() => setReschedFor(null)}>
+          <Pressable onPress={() => {}} style={{ backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.md }}>
+            <Text style={{ fontWeight: "800", color: colors.onSurface, marginBottom: 8, fontSize: 16 }}>Reschedule reminder</Text>
+            <Text style={{ color: colors.muted, marginBottom: 12 }}>{reschedFor?.customer_name} · {reschedFor?.service_type}</Text>
+            <DateField label="New due date" value={newDue} onChange={setNewDue} />
+            <PrimaryButton testID="submit-resched" label="Save" onPress={submitResched} disabled={!newDue} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { View, Text, FlatList, ScrollView, RefreshControl, Pressable } from "react-native";
+import { View, Text, FlatList, ScrollView, RefreshControl, Pressable, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme, spacing, radius } from "@/src/theme";
-import { ScreenHeader, Chip, LabeledInput, EmptyState, StatusBadge } from "@/src/ui";
+import { ScreenHeader, Chip, LabeledInput, EmptyState, StatusBadge, DateField, PrimaryButton } from "@/src/ui";
 import { api } from "@/src/api";
 import { formatDate, inr } from "@/src/format";
 import { useAuth } from "@/src/auth";
@@ -19,11 +19,29 @@ export default function Services() {
   const params = useLocalSearchParams<{ status?: string }>();
   const [status, setStatus] = useState<string>(params.status || "all");
   const [q, setQ] = useState("");
+  const [serviceType, setServiceType] = useState<string>("");
+  const [technicianId, setTech] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const { data: types = [] } = useQuery({ queryKey: ["types"], queryFn: api.serviceTypes });
+  const { data: techs = [] } = useQuery({ queryKey: ["techs"], queryFn: () => api.users("technician") });
+
+  const queryParams: Record<string, string> = {};
+  if (status !== "all") queryParams.status = status;
+  if (q) queryParams.q = q;
+  if (serviceType) queryParams.service_type = serviceType;
+  if (technicianId) queryParams.technician_id = technicianId;
+  if (dateFrom) queryParams.date_from = dateFrom;
+  if (dateTo) queryParams.date_to = dateTo;
 
   const { data = [], refetch, isRefetching } = useQuery({
-    queryKey: ["services", status, q],
-    queryFn: () => api.services({ ...(status !== "all" ? { status } : {}), ...(q ? { q } : {}) }),
+    queryKey: ["services", JSON.stringify(queryParams)],
+    queryFn: () => api.services(queryParams),
   });
+
+  const activeCount = (serviceType ? 1 : 0) + (technicianId ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }}>
@@ -39,6 +57,10 @@ export default function Services() {
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.lg, paddingBottom: 12 }} style={{ maxHeight: 56 }}>
         {STATUSES.map(s => <Chip key={s} testID={`chip-${s}`} label={s.replace("_", " ").toUpperCase()} selected={status === s} onPress={() => setStatus(s)} />)}
+        <Pressable testID="open-filters" onPress={() => setFiltersOpen(true)}
+          style={{ paddingHorizontal: 14, height: 36, borderRadius: radius.pill, backgroundColor: activeCount ? colors.brandTertiary : colors.surfaceTertiary, borderWidth: 1, borderColor: activeCount ? colors.brandSecondary : colors.border, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, flexShrink: 0 }}>
+          <Text style={{ color: activeCount ? colors.onBrandTertiary : colors.onSurface, fontWeight: "700", fontSize: 13 }}>⚙ Filters{activeCount ? ` (${activeCount})` : ""}</Text>
+        </Pressable>
       </ScrollView>
       <FlatList
         data={data} keyExtractor={(item: any) => item.id}
@@ -58,6 +80,44 @@ export default function Services() {
           </Pressable>
         )}
       />
+
+      <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={() => setFiltersOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: colors.surface, padding: spacing.lg, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingBottom: insets.bottom + spacing.lg, maxHeight: "85%" }}>
+            <ScrollView>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: spacing.md }}>Filters</Text>
+
+              <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>SERVICE TYPE</Text>
+              <ScrollView horizontal contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+                <Chip label="All" selected={!serviceType} onPress={() => setServiceType("")} />
+                {types.map((t: any) => <Chip key={t.id} testID={`f-type-${t.name}`} label={t.name} selected={serviceType === t.name} onPress={() => setServiceType(t.name)} />)}
+              </ScrollView>
+
+              {user?.role !== "technician" && (
+                <>
+                  <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>TECHNICIAN</Text>
+                  <ScrollView horizontal contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+                    <Chip label="Any" selected={!technicianId} onPress={() => setTech("")} />
+                    {techs.map((t: any) => <Chip key={t.id} testID={`f-tech-${t.id}`} label={t.name} selected={technicianId === t.id} onPress={() => setTech(t.id)} />)}
+                  </ScrollView>
+                </>
+              )}
+
+              <DateField testID="f-date-from" label="Date from" value={dateFrom} onChange={setDateFrom} />
+              <DateField testID="f-date-to" label="Date to" value={dateTo} onChange={setDateTo} />
+
+              <View style={{ flexDirection: "row", gap: 8, marginTop: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton testID="clear-filters" variant="ghost" label="Clear all" onPress={() => { setServiceType(""); setTech(""); setDateFrom(""); setDateTo(""); }} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton testID="apply-filters" label="Apply" onPress={() => setFiltersOpen(false)} />
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

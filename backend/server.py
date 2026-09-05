@@ -644,6 +644,8 @@ async def list_reminders(user=Depends(get_user)):
         r["customer_mobile"] = c.get("mobile")
         if r.get("status") == "completed":
             r["computed"] = "completed"
+        elif r.get("status") == "rescheduled" and r["due_date"] >= now_iso:
+            r["computed"] = "rescheduled"
         elif r["due_date"] < now_iso:
             r["computed"] = "overdue"
         elif r["due_date"] < (now_utc() + timedelta(days=7)).isoformat():
@@ -662,7 +664,33 @@ async def create_reminder(inp: ReminderIn, user=Depends(require_roles("admin", "
 
 @api.patch("/reminders/{rid}")
 async def update_reminder(rid: str, inp: ReminderIn, user=Depends(require_roles("admin", "manager"))):
-    await db.reminders.update_one({"id": rid}, {"$set": inp.dict()})
+    prev = await db.reminders.find_one({"id": rid}, {"_id": 0})
+    if not prev:
+        raise HTTPException(404, "Not found")
+    upd = inp.dict()
+    # If due date is being changed, mark reminder as rescheduled and keep original
+    if prev.get("due_date") and upd.get("due_date") and upd["due_date"] != prev["due_date"]:
+        upd["status"] = "rescheduled"
+        upd["previous_due_date"] = prev["due_date"]
+        upd["rescheduled_at"] = now_utc().isoformat()
+    await db.reminders.update_one({"id": rid}, {"$set": upd})
+    await audit(user, "reminder", rid, "update", upd)
+    return {"ok": True}
+
+class RescheduleIn(BaseModel):
+    due_date: str
+
+@api.post("/reminders/{rid}/reschedule")
+async def reschedule_reminder(rid: str, inp: RescheduleIn, user=Depends(require_roles("admin", "manager"))):
+    prev = await db.reminders.find_one({"id": rid})
+    if not prev:
+        raise HTTPException(404, "Not found")
+    upd = {
+        "due_date": inp.due_date, "status": "rescheduled",
+        "previous_due_date": prev.get("due_date"), "rescheduled_at": now_utc().isoformat(),
+    }
+    await db.reminders.update_one({"id": rid}, {"$set": upd})
+    await audit(user, "reminder", rid, "reschedule", upd)
     return {"ok": True}
 
 @api.post("/reminders/{rid}/complete")
@@ -776,8 +804,56 @@ async def reports_summary(user=Depends(require_roles("admin"))):
     async for u in db.users.find({"role": "technician"}, {"_id": 0, "pin_hash": 0}):
         c = await db.services.count_documents({"technician_id": u["id"], "status": "completed"})
         tech_counts.append({"id": u["id"], "name": u["name"], "completed": c})
+
+    # Daily services (last 7 days) counts
+    daily = []
+    for i in range(6, -1, -1):
+        d = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        d_end = d + timedelta(days=1)
+        cnt = await db.services.count_documents({"scheduled_date": {"$gte": d.isoformat(), "$lt": d_end.isoformat()}})
+        daily.append({"date": d.date().isoformat(), "count": cnt})
+
+    # Monthly services (last 6 months) counts + revenue
+    monthly = []
+    m = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    for i in range(5, -1, -1):
+        start = (m - relativedelta(months=i))
+        end = (start + relativedelta(months=1))
+        cnt = await db.services.count_documents({"scheduled_date": {"$gte": start.isoformat(), "$lt": end.isoformat()}})
+        rev = 0.0
+        async for s in db.services.find({"status": "completed", "completed_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}, {"charges": 1, "_id": 0}):
+            rev += float(s.get("charges") or 0)
+        monthly.append({"month": start.strftime("%b %Y"), "count": cnt, "revenue": rev})
+
+    pending_count = await db.services.count_documents({"status": {"$in": ["pending", "assigned", "in_progress"]}})
+    amc_count = await db.contracts.count_documents({})
+    amc_services_count = await db.services.count_documents({"amc_id": {"$ne": None}})
+    customers_count = await db.customers.count_documents({})
+
+    # Top customers by service count
+    top_customers: list = []
+    pipeline = [
+        {"$group": {"_id": "$customer_id", "count": {"$sum": 1}, "revenue": {"$sum": {"$ifNull": ["$charges", 0]}}}},
+        {"$sort": {"count": -1}}, {"$limit": 10},
+    ]
+    async for row in db.services.aggregate(pipeline):
+        cust = await db.customers.find_one({"id": row["_id"]}, {"_id": 0, "name": 1, "mobile": 1})
+        if cust:
+            top_customers.append({"id": row["_id"], "name": cust.get("name"), "mobile": cust.get("mobile"),
+                                  "services": row["count"], "revenue": row.get("revenue", 0)})
+
     return {"total_revenue": total_revenue, "month_revenue": month_revenue,
-            "by_service_type": by_type, "technicians": tech_counts}
+            "by_service_type": by_type, "technicians": tech_counts,
+            "daily_services": daily, "monthly_services": monthly,
+            "pending_services_count": pending_count, "amc_count": amc_count,
+            "amc_services_count": amc_services_count, "customers_count": customers_count,
+            "top_customers": top_customers}
+
+# ---------- Audit Log (Admin) ----------
+@api.get("/audit-logs")
+async def list_audit_logs(limit: int = 100, user=Depends(require_roles("admin"))):
+    logs = await db.audit_logs.find({}, {"_id": 0}).sort("at", -1).limit(min(500, limit)).to_list(500)
+    return logs
 
 # ---------- Startup ----------
 @app.on_event("startup")

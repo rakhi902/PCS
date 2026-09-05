@@ -39,6 +39,7 @@ export default function More() {
             <Row testID="menu-reports" label="Reports" onPress={() => router.push("/reports")} />
             <Row testID="menu-settings" label="Settings" onPress={() => router.push("/settings")} />
             <Row testID="menu-service-types" label="Service Types" onPress={() => router.push("/service-types")} />
+            <Row testID="menu-audit" label="Audit Log" onPress={() => router.push("/audit")} />
           </>
         )}
 

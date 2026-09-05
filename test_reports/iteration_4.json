@@ -1,0 +1,37 @@
+{
+  "summary": "Backend-only testing for 3 new features: (1) Reminder reschedule via POST /reminders/{id}/reschedule and auto-reschedule via PATCH /reminders/{id}, (2) /reports/summary extra fields for admin, (3) /audit-logs admin-only endpoint. Created /app/backend/tests/test_reschedule_reports_audit.py with 12 targeted tests across 3 classes. All 12/12 PASSED (100%). Verified: POST reschedule sets status='rescheduled', previous_due_date=<old>, rescheduled_at; computed field returns 'rescheduled' when new due is future and 'overdue' when past; PATCH with changed due_date auto-flips status to 'rescheduled' and records previous_due_date; PATCH with unchanged due_date does NOT flip status. /reports/summary returns all 11 required keys with correct shapes (daily_services len=7, monthly_services len=6 each with revenue). Manager and technician receive 403 on /reports/summary and /audit-logs. Admin /audit-logs returns list of entries with entity/action/user_name/at/changes. Reschedule action creates an audit log entry with entity='reminder' action='reschedule' and matching entity_id.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_reschedule_reports_audit.py",
+    "/app/test_reports/pytest/reschedule_reports_audit_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py update_reminder (line 665-678): The auto-reschedule logic uses `inp.dict()` (Pydantic v1) which returns ALL ReminderIn fields. If a client PATCHes without due_date (or with due_date=None), the guard `upd.get('due_date') and upd['due_date'] != prev['due_date']` prevents the flip; good. However when due_date is unchanged, `upd` still overwrites customer_id and service_type with request values - safe here since ReminderIn is required, but consider using exclude_unset for real partial updates.",
+    "server.py list_reminders (line 647): computed='rescheduled' only when status=='rescheduled' AND due_date>=now_iso (future). When rescheduled to a past date, it falls through to 'overdue' branch which is semantically ok but hides the rescheduled state in the computed field. Consider surfacing status separately in UI or extending the logic to include a 'rescheduled_overdue' state if needed.",
+    "server.py reports/summary (line 813): daily_services and monthly_services count is based on `scheduled_date` (all statuses), not completed services. If the intent is 'services performed' vs 'services scheduled', this may need clarification. Revenue in monthly is correctly filtered by status='completed'.",
+    "server.py list_audit_logs (line 855): No pagination cursor - only a limit param capped at 500. For long-lived deployments the audit collection will grow unbounded; consider adding entity/action filters and offset/from-timestamp pagination.",
+    "server.py list_audit_logs currently returns raw logs which include user_id. This is fine for admin, but there is no index on {at:-1} - queries will slow down at scale. Consider adding index."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_reschedule_reports_audit.py (new, 12 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Module-scoped fixture creates 1 fresh manager (tmgr_*) and 1 fresh technician (ttech_*) with rotated PINs, plus 1 TEST_Cust_* customer. Reminders are created per-test (4 total for the reschedule class). No cleanup performed - data isolated by unique IDs. Admin PIN handling: tries 1234 then 9999, rotates to 9999 if must_change_pin is true.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: `EXPO_PUBLIC_BACKEND_URL=http://localhost:8001 pytest /app/backend/tests/test_reschedule_reports_audit.py -n 0 -v`. Must use -n 0 because module-scoped STATE fixture is shared across classes (pytest.ini defaults to -n 2 which would break sharing). Public preview URL also works (default fallback in file). All 3 review-scope features implemented at server.py: reschedule POST at line 683-694, PATCH auto-reschedule at line 665-678, reports summary extra fields at line 790-850, audit-logs admin-only at line 853-856.",
+  "rca_of_issue": "N/A - no bugs found. All review-scope features work as specified."
+}

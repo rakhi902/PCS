@@ -1,0 +1,47 @@
+{
+  "summary": "Backend-only testing for Pest Control Service Management app (fresh backend). Ran 54 pytest cases covering auth (login/change-pin), user CRUD (manager/technician creation, reset-pin, disable/enable), customers, service types (default seeds), services (CRUD, filters, role-based financial stripping, technician-scoped view), photo upload (before/during/after) via Emergent Object Storage, AMC generation (monthly for 12 months => 13 services generated), reminders (upcoming/due/overdue computed field), dashboards (admin/manager/technician), reports (admin-only), settings, role authorization, and MongoDB _id sanitization. 53/54 passed. One real business bug found: Manager CAN set service charges when creating a service (server.py:397-398 has inverted 'or 0' logic that preserves the submitted value instead of forcing 0). All role-based read-side financial stripping works correctly. Storage/photo pipeline works end-to-end (upload + token-based fetch). AMC generated 13 monthly services with technician_id null (visible under Pending Services) as expected. Reminder computed field returns upcoming/due/overdue correctly per due_date thresholds. Reports and admin dashboard endpoints properly gated with 403 for manager/technician.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/services",
+        "issue": "Manager can set arbitrary charges on service creation. Line 397-398 of server.py: `if user['role'] != 'admin': s['charges'] = s.get('charges') or 0` — the `or 0` only replaces falsy values, so a manager posting charges=9999 gets stored as 9999. Should force `s['charges'] = 0` for non-admin roles. Verified: manager POSTed charges=9999, admin GET showed charges=9999 persisted.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pest_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix server.py POST /api/services (line ~397): change `if user['role'] != 'admin': s['charges'] = s.get('charges') or 0` to `if user['role'] != 'admin': s['charges'] = 0` so managers cannot set charges at creation. The same guard already exists correctly on PATCH via `upd.pop('charges', None)`.",
+    "Consider also stripping/forcing contract_amount=0 for manager on POST /api/amc — current code (line ~548-549) uses the same `or 0` pattern and has the same bug for AMC contract_amount, though it wasn't explicitly asserted in tests."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 397-398 and 548-549: `x = x or 0` pattern does NOT sanitize submitted values from lower-privileged roles — must be forced to 0.",
+    "server.py line 640-651: PATCH /api/settings uses upsert but Pydantic model SettingsIn has all optional fields; if a manager crafts a request they get 403 (good).",
+    "server.py `list_services` q-search filters after fetching from DB — fine for small datasets but O(n) in memory; consider $regex on aggregated fields if scale grows.",
+    "server.py PATCH /api/services allows manager to send 'status': 'completed' bypassing photo requirement (only /complete endpoint enforces photos). Consider validating photos on PATCH when status->completed too.",
+    "No pagination on GET /api/customers, /api/services (500-1000 record limits hard-coded) — acceptable for MVP.",
+    "startup() uses @app.on_event which is deprecated in FastAPI; migrate to lifespan handler."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pest_backend.py (new pytest suite, 54 tests)"
+  ],
+  "success_rate": {
+    "backend": "98.1% (53/54)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Tests create TEST_-prefixed customers, service types, manager and technician users (usernames randomized with uuid), services, an AMC (12-month monthly), reminders (upcoming/due/overdue), and settings updates. Admin PIN gets rotated to 9999 during test run (test_01 auto-recovers if either 1234 or 9999 succeeds).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_pest_backend.py. Run with `-n 0` (serial) because tests share STATE across classes — pytest.ini forces `-n 2 --dist loadscope` which breaks cross-class dependencies. Admin PIN may already be rotated from 1234 to 9999; test_01 handles both. If both fail, reset admin in MongoDB: db.test_database.users.updateOne({username:'admin'}, {\\$set:{pin_hash:<bcrypt('1234')>, must_change_pin:true, active:true}}). Storage integration requires EMERGENT_LLM_KEY in backend/.env (already set).",
+  "rca_of_issue": "Bug in POST /api/services line 397-398: `s['charges'] = s.get('charges') or 0` — Python's `or` returns the first truthy operand. If a manager submits charges=9999, s.get('charges')=9999 which is truthy, so the expression yields 9999. Intent was 'default to 0 for non-admin', actual behavior is 'preserve submitted value, defaulting only when falsy'. Fix: unconditionally `s['charges'] = 0` for non-admin. Reproduction: POST /api/services as manager with {customer_id, service_type, scheduled_date, charges:9999} → GET as admin shows charges=9999."
+}

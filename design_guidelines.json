@@ -1,0 +1,171 @@
+{
+  "app_name": "PestControlPro",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A highly readable, utilitarian field service app that pairs Apple-native comfort with the rugged operational clarity required by field technicians.",
+  "color": {
+    "surface": "#F9FAFB",
+    "onSurface": "#111827",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#111827",
+    "surfaceTertiary": "#F3F4F6",
+    "onSurfaceTertiary": "#374151",
+    "surfaceInverse": "#1F2937",
+    "onSurfaceInverse": "#F9FAFB",
+    "brand": "#14532D",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#16A34A",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#22C55E",
+    "onBrandSecondary": "#111827",
+    "brandTertiary": "#DCFCE7",
+    "onBrandTertiary": "#166534",
+    "success": "#10B981",
+    "onSuccess": "#FFFFFF",
+    "warning": "#EAB308",
+    "onWarning": "#111827",
+    "error": "#DC2626",
+    "onError": "#FFFFFF",
+    "info": "#475569",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E7EB",
+    "borderStrong": "#D1D5DB",
+    "divider": "#F3F4F6",
+    "muted": "#6B7280"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous Apple-native padding. Group related operational elements closely, but ensure screens have breathing room. Technician interaction targets MUST be large and forgiving.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use on sticky headers over scrolling task lists",
+      "Use on bottom tab bar",
+      "Use for the Floating Action Button (FAB) background tint"
+    ],
+    "dont's": [
+      "Do not use on forms, data cards, or dense list rows",
+      "Do not use if contrast drops below 4.5:1 against the underlying tint"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "PIN Login",
+      "purpose": "Frictionless authentication for field workers wearing gloves.",
+      "states": {
+        "loading": "Centered spinner during auth.",
+        "empty": "N/A",
+        "error": "Shake animation on PIN pad + subtle red warning text."
+      },
+      "layout": "Large numeric keypad (pill-shaped buttons) in the lower half. App logo and welcome text in the top third. Solid surface canvas."
+    },
+    {
+      "name": "Admin Dashboard",
+      "purpose": "A high-level command center displaying operational and financial totals.",
+      "states": {
+        "loading": "Skeleton grids for financial tiles.",
+        "empty": "Zero state with 'No activity today' illustration.",
+        "error": "Error boundary with 'Retry connection' button."
+      },
+      "layout": "2-column grid at the top for financial KPIs (Today/Monthly Amount). Scrollable list below for Pending/Completed services and AMC Due. Sticky FAB for Quick Add (Customer/Service) at bottom right."
+    },
+    {
+      "name": "Manager Dashboard",
+      "purpose": "Operational oversight without financial data exposure.",
+      "states": {
+        "loading": "Skeleton list rows.",
+        "empty": "Empty state illustration indicating 'All clear, no pending issues'.",
+        "error": "Error banner + Retry button."
+      },
+      "layout": "Horizontal scrollable chips for filters. Vertical list of assigned/pending services, upcoming reminders, and recently completed jobs. Glass sticky header."
+    },
+    {
+      "name": "Technician Dashboard",
+      "purpose": "A straightforward itinerary of today's jobs for field execution.",
+      "states": {
+        "loading": "Skeleton cards.",
+        "empty": "Success illustration 'All jobs completed for today'.",
+        "error": "Offline indicator or Retry button."
+      },
+      "layout": "Chronological timeline list of 'Today’s Assigned Jobs'. Each card features large touch targets, bold status tags, and a primary CTA (e.g., 'Start Job')."
+    },
+    {
+      "name": "Service Detail (Job Execution)",
+      "purpose": "Linear workflow enforcement for technicians to document the job.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "N/A",
+        "error": "Retry data fetch."
+      },
+      "layout": "Timeline stepper at the top (Pending -> In Progress -> Completed). Sections for 'Before', 'During', and 'After' photo capture. Large sticky CTA fixed at the bottom ('Mark In Progress' / 'Complete Job')."
+    },
+    {
+      "name": "Customer Profile",
+      "purpose": "Comprehensive view of client details, service history, and active AMCs.",
+      "states": {
+        "loading": "Skeleton profile header and list.",
+        "empty": "No services recorded yet.",
+        "error": "Error banner."
+      },
+      "layout": "Brand-tinted header card containing customer info. Prominent AMC status card (green/red indicator). Scrollable list of past services. Floating FAB to 'Add New Service'."
+    }
+  ],
+  "images": {
+    "splash_bg": {
+      "url": "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMG1vZGVybiUyMGxpdmluZyUyMHJvb218ZW58MHx8fHwxNzg4NjI2ODkyfDA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMG1vZGVybiUyMGxpdmluZyUyMHJvb218ZW58MHx8fHwxNzg4NjI2ODkyfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean and pest-free modern living room"
+    },
+    "technician_hero": {
+      "url": "https://images.unsplash.com/photo-1747659629851-a92bd71149f6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwyfHxwZXN0JTIwY29udHJvbCUyMHRlY2huaWNpYW58ZW58MHx8fHwxNzg4NjI2ODg1fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Pest control technician applying treatment"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette. No blues, purples, or oranges. The app relies on Moss/Forest green (brand), Emerald (success/primary), and neutral greys.",
+    "Implement a linear enforcement workflow for the Technician's Service Detail screen: technicians must provide 'Before' and 'After' photos before the 'Complete Job' sticky CTA is enabled.",
+    "Ensure the layout caters to field usability: touch targets for job actions must be >= 44x44pt, and typography should be large and legible (use Geist for body).",
+    "For all primary actions (e.g., 'Start Job', 'Submit Photo', 'Save Customer'), anchor a sticky CTA at the bottom of the screen (inside a safe area avoiding view), overlaid on a glass or solid surface base.",
+    "The app requires three distinct tab navigations based on the logged-in role (Admin, Manager, Technician). Dynamically render the correct navigation stack upon successful PIN login.",
+    "Dates must be formatted strictly as DD/MM/YYYY and all times in IST.",
+    "Do not use generic 'dummy' imagery; utilize the provided unsplash URLs and ensure gradient scrims are placed over background photos to maintain 4.5:1 text contrast."
+  ]
+}

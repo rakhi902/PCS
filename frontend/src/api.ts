@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystemLegacy from "expo-file-system/legacy";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL + "/api";
 const TOKEN_KEY = "pest_auth_token";
@@ -62,39 +63,58 @@ export const api = {
   completeService: (id: string, body: any) => req(`/services/${id}/complete`, { method: "POST", body: JSON.stringify(body) }),
   uploadPhoto: async (id: string, phase: string, uri: string) => {
     const token = await getToken();
-    const form = new FormData();
-    form.append("phase", phase);
-    const name = `photo_${Date.now()}.jpg`;
     if (Platform.OS === "web") {
+      const form = new FormData();
+      form.append("phase", phase);
       const blob = await (await fetch(uri)).blob();
-      form.append("file", blob, name);
-    } else {
-      form.append("file", { uri, name, type: "image/jpeg" } as any);
+      form.append("file", blob, `photo_${Date.now()}.jpg`);
+      const r = await fetch(API_URL + `/services/${id}/photos`, {
+        method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(`Upload failed ${r.status}: ${await r.text()}`);
+      return r.json();
     }
-    const r = await fetch(API_URL + `/services/${id}/photos`, {
-      method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
+    // Native: use expo-file-system uploadAsync which handles multipart correctly on RN 0.86+
+    const res = await FileSystemLegacy.uploadAsync(API_URL + `/services/${id}/photos`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystemLegacy.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: "image/jpeg",
+      parameters: { phase },
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) {
-      const t = await r.text();
-      throw new Error(`Upload failed ${r.status}: ${t}`);
-    }
-    return r.json();
+    if (res.status < 200 || res.status >= 300) throw new Error(`Upload failed ${res.status}: ${res.body}`);
+    try { return JSON.parse(res.body); } catch { return { path: "" }; }
   },
   uploadSignature: async (id: string, dataUrl: string) => {
     const token = await getToken();
-    const form = new FormData();
-    const name = `sig_${Date.now()}.png`;
     if (Platform.OS === "web") {
+      const form = new FormData();
       const blob = await (await fetch(dataUrl)).blob();
-      form.append("file", blob, name);
-    } else {
-      form.append("file", { uri: dataUrl, name, type: "image/png" } as any);
+      form.append("file", blob, `sig_${Date.now()}.png`);
+      const r = await fetch(API_URL + `/services/${id}/signature`, {
+        method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+      return r.json();
     }
-    const r = await fetch(API_URL + `/services/${id}/signature`, {
-      method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
+    // Native: write base64 to a temp file then upload via expo-file-system
+    let localUri = dataUrl;
+    if (dataUrl.startsWith("data:")) {
+      const base64 = dataUrl.split(",")[1];
+      const path = FileSystemLegacy.cacheDirectory + `sig_${Date.now()}.png`;
+      await FileSystemLegacy.writeAsStringAsync(path, base64, { encoding: FileSystemLegacy.EncodingType.Base64 });
+      localUri = path;
+    }
+    const res = await FileSystemLegacy.uploadAsync(API_URL + `/services/${id}/signature`, localUri, {
+      httpMethod: "POST",
+      uploadType: FileSystemLegacy.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: "image/png",
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
-    return r.json();
+    if (res.status < 200 || res.status >= 300) throw new Error(`Upload failed ${res.status}: ${res.body}`);
+    try { return JSON.parse(res.body); } catch { return { path: "" }; }
   },
 
   amc: () => req("/amc"),

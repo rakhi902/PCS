@@ -1,0 +1,38 @@
+{
+  "summary": "Backend-only retest for iteration-9 (business rule: photos are OPTIONAL for marking a service completed). Created /app/backend/tests/test_complete_no_photos.py with 10 targeted assertions covering every requested scenario. RESULT: 10/10 PASS. Verified: (1) POST /api/services/{sid}/complete by assigned technician returns 200 and persists status='completed' with (a) NO photos, (b) only 'before' photo, (c) only 'after' photo, (d) both photos. (2) PATCH /api/services/{sid} {status:'completed'} with NO photos returns 200 for BOTH manager and admin (previously 400) and DB shows status='completed' + completed_at set. (3) Termite auto-reminder regression: firing the /complete endpoint on a Termite service with NO photos creates exactly one reminder with auto_source='termite_annual', reminder_period_months=12, source_service_id=<sid>; PATCH status='completed' on a Termite service (fresh customer to avoid the intentional +/- 2-day dedup window) also creates exactly one auto-reminder. (4) Regression: technician PATCH {status:'pending'} on a completed service returns 400 and DB stays 'completed'. (5) Regression: technician PATCH {payment_status:'paid'} on a completed service returns 200 (Cash Collection still works). Photo enforcement has been correctly and intentionally removed from both /complete and PATCH-to-completed paths per business requirement.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_complete_no_photos.py",
+    "/app/test_reports/pytest/complete_no_photos.xml"
+  ],
+  "action_items": [
+    "None. All 9 requested scenarios (10 pytest tests) PASS. Business rule 'complete without photos' is correctly implemented in server.py (POST /complete at line 486-505 and PATCH at line 445-484)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:486-505 (POST /services/{sid}/complete) — Photo requirement correctly removed; comment on line 494 documents intent ('Photos are not required to mark completed'). Termite auto-reminder + feedback_request creation still fire. Good.",
+    "server.py:445-484 (PATCH /services/{sid}) — Manager/Admin can transition status to 'completed' without any photo check. completed_at is set on transition (line 477-478); create_termite_reminder_if_needed is invoked when upd.status=='completed' (line 480-482). Correct.",
+    "server.py:456-462 (technician lockdown after completion) — Technician can only touch payment_status once status=='completed'; other fields (including status) rejected — enforces the 'cannot un-complete' contract. Correct.",
+    "create_termite_reminder_if_needed (line 197-226) — Dedup window of +/- 2 days on due_date + customer + service_type is intentional and correct; tests use fresh customers when verifying independent auto-reminder creations."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_complete_no_photos.py (NEW — 10 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Fresh module-scoped: TEST_Cust_<suffix>, TEST_Cust_Termite2_<suffix>, tmgr_<suffix> (manager, PIN 1111->2222), ttech_<suffix> (technician, PIN 1111->2222). Multiple services created and completed to exercise each scenario.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: `EXPO_BACKEND_URL=http://localhost:8001 pytest /app/backend/tests/test_complete_no_photos.py -n 0 -v`. If admin/1234 login stops working, reset via a small python one-liner using bcrypt+pymongo (see iteration_8.json context). NOTE: Prior test files still reference the old 'photos required for /complete' contract (e.g., test_photos_signature_retest.py::TestRegressionComplete asserts 400 without photos). Those legacy assertions are now STALE per the intentional business rule change and should be updated by the main agent when convenient — non-blocking for the current requirement.",
+  "rca_of_issue": "N/A — this is a business rule change, not a bug fix. Main-agent removed the photo-required guard from both /complete and PATCH-to-completed paths. Tests confirm the new contract holds and all prior regressions (Termite auto-reminder, technician lockdown, technician payment toggle) still pass."
+}

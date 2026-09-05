@@ -475,11 +475,6 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
             if s.get("status") == "pending" and upd["technician_id"]:
                 upd["status"] = upd.get("status", "assigned")
     if "status" in upd and upd["status"] == "completed":
-        # Enforce before + after photo requirement for non-admin
-        if user["role"] != "admin":
-            photos = s.get("photos", {}) or {}
-            if not photos.get("before") or not photos.get("after"):
-                raise HTTPException(400, "Before and After photos required to complete")
         upd["completed_at"] = now_utc().isoformat()
     await db.services.update_one({"id": sid}, {"$set": upd})
     if upd.get("status") == "completed":
@@ -496,8 +491,7 @@ async def complete_service(sid: str, inp: TechCompleteIn, user=Depends(get_user)
     if user["role"] == "technician" and s.get("technician_id") != user["id"]:
         raise HTTPException(403, "Forbidden")
     photos = s.get("photos", {})
-    if not photos.get("before") or not photos.get("after"):
-        raise HTTPException(400, "Before and After photos required")
+    # Photos are not required to mark completed; technician can add them separately.
     upd = {**{k: v for k, v in inp.dict().items() if v is not None},
            "status": "completed", "completed_at": now_utc().isoformat()}
     await db.services.update_one({"id": sid}, {"$set": upd})

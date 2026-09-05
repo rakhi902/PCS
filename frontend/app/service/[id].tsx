@@ -244,14 +244,14 @@ export default function ServiceDetail() {
         )}
 
         <View style={{ gap: 8 }}>
-          {canEdit && !editing && <PrimaryButton testID="edit-svc" label="Edit Service" onPress={() => setEditing(true)} />}
-          {editing && <PrimaryButton testID="save-svc" label="Save Changes" onPress={saveEdits} />}
+          {!isTech && canEdit && !editing && <PrimaryButton testID="edit-svc" label="Edit Service" onPress={() => setEditing(true)} />}
+          {!isTech && editing && <PrimaryButton testID="save-svc" label="Save Changes" onPress={saveEdits} />}
           {isTech && s.status === "assigned" && <PrimaryButton testID="start-job" label="Start Service" onPress={startJob} />}
           {isTech && s.status === "in_progress" && <PrimaryButton testID="save-progress" label="Save Progress" onPress={saveEdits} />}
           {(isTech || canEdit) && s.status !== "completed" && s.status !== "cancelled" && (
             <PrimaryButton testID="complete-job" label="Mark Completed" onPress={completeJob} />
           )}
-          {canEdit && s.status !== "completed" && s.status !== "cancelled" && (
+          {!isTech && canEdit && s.status !== "completed" && s.status !== "cancelled" && (
             <PrimaryButton testID="cancel-job" variant="danger" label="Cancel Service" onPress={cancelSvc} />
           )}
           {s.status === "completed" && (

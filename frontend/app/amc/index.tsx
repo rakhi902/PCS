@@ -40,7 +40,7 @@ export default function AMCList() {
             <Text style={{ fontWeight: "800", color: colors.onSurface }}>{item.customer_name}</Text>
             <Text style={{ color: colors.muted, fontSize: 13 }}>{item.service_type} · {item.frequency}</Text>
             <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{formatDate(item.start_date)} → {formatDate(item.end_date)}</Text>
-            {user?.role === "admin" && item.contract_amount != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(item.contract_amount)}</Text>}
+            {user?.role !== "technician" && item.contract_amount != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(item.contract_amount)}</Text>}
             <Pressable testID={`amc-nudge-${item.id}`} onPress={() => nudge(item)} style={{ marginTop: 8, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success, borderRadius: radius.pill }}>
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>💬 Nudge on WhatsApp</Text>
             </Pressable>

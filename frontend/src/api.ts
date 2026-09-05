@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL + "/api";
@@ -64,7 +65,7 @@ export const api = {
     const form = new FormData();
     form.append("phase", phase);
     const name = `photo_${Date.now()}.jpg`;
-    if (typeof window !== "undefined" && window.navigator && (uri.startsWith("blob:") || uri.startsWith("data:") || uri.startsWith("http"))) {
+    if (Platform.OS === "web") {
       const blob = await (await fetch(uri)).blob();
       form.append("file", blob, name);
     } else {
@@ -73,15 +74,22 @@ export const api = {
     const r = await fetch(API_URL + `/services/${id}/photos`, {
       method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(`Upload failed ${r.status}: ${t}`);
+    }
     return r.json();
   },
   uploadSignature: async (id: string, dataUrl: string) => {
     const token = await getToken();
     const form = new FormData();
     const name = `sig_${Date.now()}.png`;
-    const blob = await (await fetch(dataUrl)).blob();
-    form.append("file", blob, name);
+    if (Platform.OS === "web") {
+      const blob = await (await fetch(dataUrl)).blob();
+      form.append("file", blob, name);
+    } else {
+      form.append("file", { uri: dataUrl, name, type: "image/png" } as any);
+    }
     const r = await fetch(API_URL + `/services/${id}/signature`, {
       method: "POST", body: form as any, headers: { Authorization: `Bearer ${token}` },
     });

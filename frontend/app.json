@@ -9,14 +9,19 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.pestcontrolmgmt.txfwjh"
+      "bundleIdentifier": "com.emergent.pestcontrolmgmt.txfwjh",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Capture before/after service photos",
+        "NSPhotoLibraryUsageDescription": "Attach existing photos to service records"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.pestcontrolmgmt.txfwjh"
+      "package": "com.emergent.pestcontrolmgmt.txfwjh",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",

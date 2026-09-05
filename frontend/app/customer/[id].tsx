@@ -49,7 +49,7 @@ export default function CustomerProfile() {
               <StatusBadge status={s.status} />
             </View>
             <Text style={{ color: colors.muted, fontSize: 12 }}>{formatDate(s.scheduled_date)}</Text>
-            {user?.role === "admin" && s.charges != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{inr(s.charges)}</Text>}
+            {user?.role !== "technician" && s.charges != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700" }}>{inr(s.charges)}</Text>}
           </Pressable>
         ))}
       </ScrollView>

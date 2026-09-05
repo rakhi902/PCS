@@ -44,18 +44,6 @@ export default function ManagerHome() {
           <Kpi testID="mgr-completed" label="Recently Done" value={recent.length} tone="muted" />
         </View>
 
-        <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 8, fontWeight: "700" }}>RECENTLY COMPLETED</Text>
-        {recent.length === 0 ? <EmptyState label="Nothing completed yet" /> : recent.map((s: any) => (
-          <Pressable key={s.id} testID={`recent-${s.id}`} onPress={() => router.push(`/service/${s.id}`)}
-            style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-              <Text style={{ fontWeight: "700", color: colors.onSurface }}>{s.service_type}</Text>
-              <StatusBadge status="completed" />
-            </View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>{formatDate(s.completed_at || s.scheduled_date)}</Text>
-          </Pressable>
-        ))}
-
         <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 8, marginTop: spacing.lg, fontWeight: "700" }}>QUICK ACTIONS</Text>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
           {[

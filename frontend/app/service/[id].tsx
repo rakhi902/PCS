@@ -36,6 +36,7 @@ export default function ServiceDetail() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [sigOpen, setSigOpen] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
+  const [pickerPhase, setPickerPhase] = useState<null | "before" | "during" | "after">(null);
 
   const { data: allCustomers = [] } = useQuery({ queryKey: ["custs-all"], queryFn: () => api.customers(), enabled: editing });
   const { data: types = [] } = useQuery({ queryKey: ["types"], queryFn: api.serviceTypes });
@@ -55,20 +56,33 @@ export default function ServiceDetail() {
   const isTech = user?.role === "technician";
   const canEdit = !isTech && !locked;
 
-  const pickPhoto = async (phase: "before" | "during" | "after") => {
+  const doUpload = async (phase: "before" | "during" | "after", source: "camera" | "library") => {
     if (Platform.OS !== "web") {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { const gal = await ImagePicker.requestMediaLibraryPermissionsAsync(); if (!gal.granted) return; }
+      if (source === "camera") {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) { Alert.alert("Camera permission denied", "Please enable camera access in Settings."); return; }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { Alert.alert("Photos permission denied", "Please enable Photos access in Settings."); return; }
+      }
     }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+    const res = source === "camera"
+      ? await ImagePicker.launchCameraAsync({ quality: 0.7, mediaTypes: ["images"] as any })
+      : await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ["images"] as any });
     if (res.canceled || !res.assets?.[0]) return;
     setUploading(phase);
     try {
       await api.uploadPhoto(id, phase, res.assets[0].uri);
       await refetch();
     } catch (e: any) {
-      if (Platform.OS === "web") { alert("Upload failed: " + e.message); } else { Alert.alert("Upload failed", e.message); }
+      const msg = "Upload failed: " + (e?.message || String(e));
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Upload failed", msg);
     } finally { setUploading(null); }
+  };
+
+  const pickPhoto = (phase: "before" | "during" | "after") => {
+    if (Platform.OS === "web") { doUpload(phase, "library"); return; }
+    setPickerPhase(phase);
   };
 
   const saveEdits = async () => {
@@ -134,7 +148,7 @@ export default function ServiceDetail() {
           <Text style={{ color: colors.onSurface }}><Text style={{ color: colors.muted }}>Service:</Text> {s.service_type}</Text>
           <Text style={{ color: colors.onSurface }}><Text style={{ color: colors.muted }}>Scheduled:</Text> {formatDateTime(s.scheduled_date)}</Text>
           {s.completed_at && <Text style={{ color: colors.onSurface }}><Text style={{ color: colors.muted }}>Completed:</Text> {formatDateTime(s.completed_at)}</Text>}
-          {user?.role === "admin" && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(s.charges)} · {s.payment_status}</Text>}
+          {user?.role !== "technician" && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(s.charges)} · {s.payment_status}</Text>}
           {s.instructions ? <Text style={{ color: colors.onSurface, marginTop: 6, fontStyle: "italic" }}>Instructions: {s.instructions}</Text> : null}
         </View>
 
@@ -175,7 +189,7 @@ export default function ServiceDetail() {
               {types.map((t: any) => <Chip key={t.id} testID={`edit-type-${t.name}`} label={t.name} selected={serviceType === t.name} onPress={() => setServiceType(t.name)} />)}
             </ScrollView>
             <DateField testID="fld-schedule" label="Scheduled Date" value={scheduled} onChange={setScheduled} mode="datetime" />
-            {user?.role === "admin" && <LabeledInput testID="fld-charges" label="Charges (₹)" value={charges} onChangeText={setCharges} keyboardType="numeric" />}
+            {user?.role !== "technician" && <LabeledInput testID="fld-charges" label="Charges (₹)" value={charges} onChangeText={setCharges} keyboardType="numeric" />}
             <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>PAYMENT</Text>
             <ScrollView horizontal contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
               {["unpaid", "paid", "pending", "amc"].map(p => <Chip key={p} label={p} selected={paymentStatus === p} onPress={() => setPaymentStatus(p)} />)}
@@ -246,6 +260,25 @@ export default function ServiceDetail() {
         </View>
       </ScrollView>
       <SignaturePadModal visible={sigOpen} onClose={() => setSigOpen(false)} onSave={saveSignature} />
+      {pickerPhase && (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, paddingBottom: insets.bottom + spacing.lg }}>
+            <Text style={{ fontWeight: "800", color: colors.onSurface, fontSize: 16, marginBottom: spacing.md }}>Add {pickerPhase.toUpperCase()} photo</Text>
+            <Pressable testID="pick-camera" onPress={() => { const p = pickerPhase; setPickerPhase(null); doUpload(p!, "camera"); }}
+              style={{ padding: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, alignItems: "center", marginBottom: 10 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>📷 Take Photo</Text>
+            </Pressable>
+            <Pressable testID="pick-library" onPress={() => { const p = pickerPhase; setPickerPhase(null); doUpload(p!, "library"); }}
+              style={{ padding: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, alignItems: "center", borderWidth: 1, borderColor: colors.border, marginBottom: 10 }}>
+              <Text style={{ color: colors.onSurface, fontWeight: "700" }}>🖼 Choose from Library</Text>
+            </Pressable>
+            <Pressable onPress={() => setPickerPhase(null)}
+              style={{ padding: spacing.md, alignItems: "center" }}>
+              <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

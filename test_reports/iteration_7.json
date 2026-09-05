@@ -1,0 +1,56 @@
+{
+  "summary": "Backend-only validation of iteration-7 fixes: (1) Manager can POST charges on services and contract_amount on AMC; response reflects submitted values; manager GET returns charges/contract_amount. (2) Technician GET /services and /services/{id} still strip charges (never present). (3) PATCH /api/services/{id} with status='completed' by non-admin (manager) without before+after photos → 400 'Before and After photos required to complete'; status remains prior state. (4) Admin bypass works: PATCH complete without photos → 200. (5) Technician POST /complete without photos still returns 400. (6) Regression: Termite auto-reminder still created after technician /complete with photos (auto_source='termite_annual'). Created /app/backend/tests/test_charges_amc_photos.py with 15 targeted tests — ALL PASS. Updated 2 stale assertions in /app/backend/tests/test_production_qa.py that encoded the OLD (pre-fix) 'manager charges stripped' behavior; the full regression suite (50 tests) now passes end-to-end. Total: 65/65 tests pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/services (manager)",
+        "issue": "The 'charges' field is always present but is 0 for AMC-generated services (payment_status='amc'). This is by design but consumers may want to distinguish 'no charge yet' vs 'AMC covered'. Non-blocking."
+      },
+      {
+        "endpoint": "POST /api/amc (manager)",
+        "issue": "AMC-generated child services are hard-coded charges=0 and payment_status='amc'. Manager cannot pre-seed per-visit charges at AMC creation; must PATCH each. Acceptable but worth documenting."
+      },
+      {
+        "endpoint": "PATCH /api/services/{sid} status='completed'",
+        "issue": "Error message 'Before and After photos required to complete' is not localized. Non-blocking."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_charges_amc_photos.py",
+    "/app/backend/tests/test_production_qa.py",
+    "/app/test_reports/pytest/charges_amc_photos.xml"
+  ],
+  "action_items": [
+    "No blocking actions. All 9 required bug-fix scenarios validated as PASS.",
+    "Optional: update client apps (manager UI) to actually display charges and contract_amount fields now that the backend returns them.",
+    "Optional: consider making the create_service response symmetric with GET — currently POST always echoes 'charges' key even for technician (though technicians cannot create services, so no leak)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:366-370 strip_financials — correctly gates on role=='technician' only; manager/admin retain charges. Correct.",
+    "server.py:445-489 update_service — manager branch (lines 469-471) explicitly leaves 'upd' untouched so charges/payment_status flow through. Correct.",
+    "server.py:477-483 — photo-required check on status='completed' correctly bypasses when user['role']=='admin'. Non-admin (manager, technician) both trigger the 400. Correct.",
+    "server.py:498-500 — /complete endpoint enforces photos for ALL roles including admin — spec says 'existing behavior' preserved. Confirmed: admin calling /complete without photos would also get 400, which is consistent with the existing endpoint contract (that endpoint is technician-oriented).",
+    "server.py:596-597 — 'if user role technician' inside list_amc is dead code because line 587-588 already 403s technicians. Harmless but redundant."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_charges_amc_photos.py (NEW — 15 tests)",
+    "/app/backend/tests/test_production_qa.py (updated 2 stale assertions in TestEManagerPerms to reflect new spec — manager now sees & posts charges)"
+  ],
+  "success_rate": {
+    "backend": "100% (65/65 passed — 15 new + 50 regression)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Fresh TEST_Cust_{suffix}, tmgr_{suffix} (manager, PIN rotated 1111→2222), ttech_{suffix} (technician, PIN rotated 1111→2222), 5 services and 1 AMC contract with 4 generated child services created during the test module. Admin PIN reset to 1234 at module setup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: `python3 -c \"import bcrypt, os; from pymongo import MongoClient; from dotenv import load_dotenv; load_dotenv('/app/backend/.env'); MongoClient(os.environ['MONGO_URL'])[os.environ['DB_NAME']].users.update_one({'username':'admin'}, {'\\$set': {'pin_hash': bcrypt.hashpw(b'1234', bcrypt.gensalt()).decode(), 'must_change_pin': False, 'active': True}})\"` then `pytest /app/backend/tests/ -n 0 -v`. Must be run with -n 0 because test_production_qa.py uses module-scoped state.",
+  "rca_of_issue": "Iteration-7 fixes applied by main agent in server.py: (a) strip_financials() now only strips for role=='technician' (was stripping for manager too) — verified at line 366-370. (b) update_service manager branch leaves upd untouched instead of dropping charges — line 469-471. (c) PATCH /services with status='completed' now enforces before+after photos when role != 'admin' at lines 477-483; admin bypass is preserved. All 9 requested test scenarios PASS. Two legacy tests in test_production_qa.py that encoded the OLD stripped-manager-charges contract were updated to match the new spec."
+}

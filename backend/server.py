@@ -335,8 +335,8 @@ async def get_customer(cid: str, user=Depends(get_user)):
     services = await db.services.find({"customer_id": cid}, {"_id": 0}).sort("scheduled_date", -1).to_list(500)
     if user["role"] == "technician":
         services = [s for s in services if s.get("technician_id") == user["id"]]
-    # Strip financials for non-admin
-    if user["role"] != "admin":
+    # Strip financials for technician only
+    if user["role"] == "technician":
         for s in services:
             s.pop("charges", None)
     return {"customer": c, "services": services}
@@ -364,7 +364,8 @@ async def create_service_type(inp: ServiceTypeIn, user=Depends(require_roles("ad
 
 # ---------- Services ----------
 def strip_financials(s, role):
-    if role != "admin":
+    # Only technicians never see charges; admin & manager can see per-service charges.
+    if role == "technician":
         s.pop("charges", None)
     return s
 
@@ -425,8 +426,6 @@ async def create_service(inp: ServiceIn, user=Depends(require_roles("admin", "ma
         "medicine": None, "quantity": None, "technician_notes": None,
         "completed_at": None,
     }
-    if user["role"] != "admin":
-        s["charges"] = 0
     await db.services.insert_one(s)
     s.pop("_id", None)
     await audit(user, "service", s["id"], "create")
@@ -443,7 +442,6 @@ async def get_service(sid: str, user=Depends(get_user)):
     s["customer"] = c
     strip_financials(s, user["role"])
     return s
-
 @api.patch("/services/{sid}")
 async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user)):
     s = await db.services.find_one({"id": sid})
@@ -469,13 +467,19 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
             if not upd:
                 raise HTTPException(400, "Service completed and locked")
         if user["role"] == "manager":
-            upd.pop("charges", None)
+            # Manager can now set charges/payment; leave upd untouched
+            pass
         # Technician change
         if "technician_id" in upd and upd["technician_id"] != s.get("technician_id"):
             # Auto-set status assigned when adding tech to pending
             if s.get("status") == "pending" and upd["technician_id"]:
                 upd["status"] = upd.get("status", "assigned")
     if "status" in upd and upd["status"] == "completed":
+        # Enforce before + after photo requirement for non-admin
+        if user["role"] != "admin":
+            photos = s.get("photos", {}) or {}
+            if not photos.get("before") or not photos.get("after"):
+                raise HTTPException(400, "Before and After photos required to complete")
         upd["completed_at"] = now_utc().isoformat()
     await db.services.update_one({"id": sid}, {"$set": upd})
     if upd.get("status") == "completed":
@@ -589,7 +593,7 @@ async def list_amc(user=Depends(get_user)):
         c = customers.get(a["customer_id"], {})
         a["customer_name"] = c.get("name")
         a["customer_mobile"] = c.get("mobile")
-        if user["role"] != "admin":
+        if user["role"] == "technician":
             a.pop("contract_amount", None)
     return amcs
 
@@ -603,8 +607,6 @@ async def create_amc(inp: AMCIn, user=Depends(require_roles("admin", "manager"))
     if end < start:
         raise HTTPException(400, "End date must be after start")
     amc = {**inp.dict(), "id": new_id(), "created_at": now_utc().isoformat(), "created_by": user["id"]}
-    if user["role"] != "admin":
-        amc["contract_amount"] = 0
     await db.contracts.insert_one(amc)
     # Generate scheduled services
     dates = generate_schedule(start, end, inp.frequency, inp.custom_interval_days)
@@ -631,7 +633,7 @@ async def get_amc(aid: str, user=Depends(get_user)):
         raise HTTPException(404, "Not found")
     c = await db.customers.find_one({"id": a["customer_id"]}, {"_id": 0})
     services = await db.services.find({"amc_id": aid}, {"_id": 0}).sort("scheduled_date", 1).to_list(1000)
-    if user["role"] != "admin":
+    if user["role"] == "technician":
         a.pop("contract_amount", None)
         for s in services: s.pop("charges", None)
     return {"amc": a, "customer": c, "services": services}
@@ -775,7 +777,6 @@ async def manager_dashboard(user=Depends(require_roles("manager", "admin"))):
     pending_payments = await db.services.count_documents({"status": "completed", "payment_status": {"$in": ["unpaid", "pending"]}})
     pending = await db.services.count_documents({"status": {"$in": ["pending", "assigned"]}})
     recent = await db.services.find({"status": "completed"}, {"_id": 0}).sort("completed_at", -1).limit(10).to_list(10)
-    for r in recent: r.pop("charges", None)
     upcoming_reminders = await db.reminders.count_documents({"status": {"$ne": "completed"}})
     return {"pending_payments": pending_payments, "pending_services": pending,
             "upcoming_reminders": upcoming_reminders, "recent_completed": recent}

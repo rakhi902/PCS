@@ -257,16 +257,19 @@ class TestEManagerPerms:
         r = requests.get(f"{API}/reports/export.csv", params={"kind": "services", "token": S["mgr_tok"]})
         assert r.status_code == 403
 
-    def test_manager_customers_and_services_no_charges(self):
+    def test_manager_customers_and_services_see_charges(self):
+        # SPEC CHANGE (iteration 7): Manager CAN now see charges on services.
         h = _hdrs(S["mgr_tok"])
         r = requests.get(f"{API}/customers", headers=h)
         assert r.status_code == 200
         r = requests.get(f"{API}/services", headers=h)
         assert r.status_code == 200
+        # Manager should see the 'charges' key on each service (may be 0)
         for s in r.json():
-            assert "charges" not in s
+            assert "charges" in s
 
-    def test_manager_post_service_charges_stripped(self):
+    def test_manager_post_service_charges_persisted(self):
+        # SPEC CHANGE (iteration 7): Manager can POST charges and value is persisted (not stripped).
         h = _hdrs(S["mgr_tok"])
         r = requests.post(
             f"{API}/services",
@@ -275,11 +278,10 @@ class TestEManagerPerms:
                   "charges": 9999},
             headers=h,
         )
-        # Manager response strips charges via strip_financials? no -- create_service returns s directly.
-        # Verify via GET as admin
+        assert r.status_code == 200
         sid = r.json()["id"]
         r2 = requests.get(f"{API}/services/{sid}", headers=_hdrs(S["admin_tok"]))
-        assert r2.json()["charges"] == 0
+        assert r2.json()["charges"] == 9999
 
 
 # ---------------- Technician permissions ---------------- #

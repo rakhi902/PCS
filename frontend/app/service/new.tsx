@@ -65,7 +65,7 @@ export default function NewService() {
           {techs.map((t: any) => <Chip key={t.id} testID={`sel-tech-${t.id}`} label={t.name} selected={technician_id === t.id} onPress={() => setTech(t.id)} />)}
         </ScrollView>
 
-        {user?.role === "admin" && (
+        {user?.role !== "technician" && (
           <LabeledInput testID="svc-charges" label="Charges (₹)" value={charges} onChangeText={setCharges} keyboardType="numeric" />
         )}
         <LabeledInput testID="svc-instr" label="Instructions" value={instructions} onChangeText={setInst} multiline />

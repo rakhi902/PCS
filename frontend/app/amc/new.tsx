@@ -55,7 +55,7 @@ export default function NewAMC() {
           {FREQS.map(f => <Chip key={f} label={f} selected={frequency === f} onPress={() => setF(f)} />)}
         </ScrollView>
         {frequency === "custom" && <LabeledInput label="Custom Interval (days)" value={customDays} onChangeText={setCustom} keyboardType="numeric" />}
-        {user?.role === "admin" && <LabeledInput label="Contract Amount (₹)" value={amount} onChangeText={setAmt} keyboardType="numeric" />}
+        {user?.role !== "technician" && <LabeledInput label="Contract Amount (₹)" value={amount} onChangeText={setAmt} keyboardType="numeric" />}
         <LabeledInput label="Notes" value={notes} onChangeText={setNotes} multiline />
         <PrimaryButton testID="save-amc" label="Create AMC" onPress={submit} loading={busy} disabled={!customer_id || !service_type} />
       </ScrollView>

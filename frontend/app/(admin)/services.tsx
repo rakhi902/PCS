@@ -76,7 +76,7 @@ export default function Services() {
             </View>
             <Text style={{ color: colors.muted, fontSize: 13 }}>{item.service_type} · {formatDate(item.scheduled_date)}</Text>
             <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{item.customer_mobile}</Text>
-            {user?.role === "admin" && item.charges != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(item.charges)}</Text>}
+            {user?.role !== "technician" && item.charges != null && <Text style={{ color: colors.brandPrimary, fontWeight: "700", marginTop: 4 }}>{inr(item.charges)}</Text>}
           </Pressable>
         )}
       />

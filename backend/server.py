@@ -454,13 +454,20 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
         # Technician limited to own service progress fields
         if s.get("technician_id") != user["id"]:
             raise HTTPException(403, "Forbidden")
-        allowed = {"status", "medicine", "quantity", "technician_notes", "payment_status"}
+        # Once completed, the only field a technician may still touch is payment_status (cash collection)
+        if s.get("status") == "completed":
+            allowed = {"payment_status"}
+        else:
+            allowed = {"status", "medicine", "quantity", "technician_notes", "payment_status"}
         upd = {k: v for k, v in upd.items() if k in allowed}
         if not upd:
             raise HTTPException(400, "Nothing to update")
     else:
         if s.get("status") == "completed" and user["role"] != "admin":
-            raise HTTPException(400, "Service completed and locked")
+            # Manager may still update payment_status on completed jobs; other fields locked
+            upd = {k: v for k, v in upd.items() if k == "payment_status"}
+            if not upd:
+                raise HTTPException(400, "Service completed and locked")
         if user["role"] == "manager":
             upd.pop("charges", None)
         # Technician change
@@ -848,6 +855,89 @@ async def reports_summary(user=Depends(require_roles("admin"))):
             "pending_services_count": pending_count, "amc_count": amc_count,
             "amc_services_count": amc_services_count, "customers_count": customers_count,
             "top_customers": top_customers}
+
+@api.get("/reports/export.csv")
+async def export_csv(kind: str = "services", date_from: Optional[str] = None, date_to: Optional[str] = None, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    # Accept token via query so a <a href> or Linking.openURL works without headers
+    tok = None
+    if authorization and authorization.startswith("Bearer "):
+        tok = authorization.split(" ", 1)[1]
+    elif token:
+        tok = token
+    if not tok:
+        raise HTTPException(401, "Missing token")
+    try:
+        payload = jwt.decode(tok, JWT_SECRET, algorithms=[JWT_ALG])
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    u = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "pin_hash": 0})
+    if not u or u.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+
+    import csv, io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+
+    def dt(iso):
+        if not iso: return ""
+        try:
+            d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+            return d.strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            return iso
+
+    if kind == "services":
+        w.writerow(["ID", "Customer", "Mobile", "Service Type", "Scheduled", "Status", "Technician", "Charges (INR)", "Payment", "Completed"])
+        q: dict = {}
+        if date_from or date_to:
+            rng: dict = {}
+            if date_from: rng["$gte"] = date_from
+            if date_to: rng["$lte"] = date_to
+            q["scheduled_date"] = rng
+        cids = set(); tids = set()
+        rows = []
+        async for s in db.services.find(q, {"_id": 0}).sort("scheduled_date", 1):
+            rows.append(s); cids.add(s.get("customer_id")); 
+            if s.get("technician_id"): tids.add(s["technician_id"])
+        customers = {c["id"]: c async for c in db.customers.find({"id": {"$in": list(cids)}}, {"_id": 0})}
+        techs = {t["id"]: t async for t in db.users.find({"id": {"$in": list(tids)}}, {"_id": 0, "pin_hash": 0})}
+        for s in rows:
+            c = customers.get(s.get("customer_id"), {})
+            t = techs.get(s.get("technician_id"), {}) if s.get("technician_id") else {}
+            w.writerow([s.get("id"), c.get("name", ""), c.get("mobile", ""), s.get("service_type", ""),
+                        dt(s.get("scheduled_date")), s.get("status", ""), t.get("name", ""),
+                        float(s.get("charges") or 0), s.get("payment_status", ""), dt(s.get("completed_at"))])
+        filename = "services.csv"
+
+    elif kind == "revenue-monthly":
+        w.writerow(["Month", "Services", "Revenue (INR)"])
+        now = now_utc()
+        m = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        for i in range(11, -1, -1):
+            start = (m - relativedelta(months=i))
+            end = start + relativedelta(months=1)
+            cnt = await db.services.count_documents({"scheduled_date": {"$gte": start.isoformat(), "$lt": end.isoformat()}})
+            rev = 0.0
+            async for s in db.services.find({"status": "completed", "completed_at": {"$gte": start.isoformat(), "$lt": end.isoformat()}}, {"charges": 1, "_id": 0}):
+                rev += float(s.get("charges") or 0)
+            w.writerow([start.strftime("%b %Y"), cnt, rev])
+        filename = "revenue_monthly.csv"
+
+    elif kind == "customers":
+        w.writerow(["ID", "Name", "Mobile", "Alt", "Address", "City", "Total Services", "Total Revenue (INR)"])
+        async for c in db.customers.find({}, {"_id": 0}):
+            cnt = await db.services.count_documents({"customer_id": c["id"]})
+            rev = 0.0
+            async for s in db.services.find({"customer_id": c["id"], "status": "completed"}, {"charges": 1, "_id": 0}):
+                rev += float(s.get("charges") or 0)
+            w.writerow([c["id"], c.get("name", ""), c.get("mobile", ""), c.get("alt_mobile", ""),
+                        c.get("address", ""), c.get("city", ""), cnt, rev])
+        filename = "customers.csv"
+    else:
+        raise HTTPException(400, "Unknown kind")
+
+    return Response(content=buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 # ---------- Audit Log (Admin) ----------
 @api.get("/audit-logs")

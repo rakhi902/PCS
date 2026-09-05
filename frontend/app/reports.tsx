@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { View, Text, ScrollView, RefreshControl, Pressable } from "react-native";
+import { View, Text, ScrollView, RefreshControl, Pressable, Linking, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTheme, spacing, radius } from "@/src/theme";
-import { api } from "@/src/api";
+import { api, getToken } from "@/src/api";
 import { ScreenHeader, EmptyState } from "@/src/ui";
 import { inr } from "@/src/format";
 
@@ -51,6 +51,13 @@ export default function Reports() {
   const d: any = data || {};
   const dailyMax = Math.max(1, ...(d.daily_services || []).map((r: any) => r.count));
   const monthMax = Math.max(1, ...(d.monthly_services || []).map((r: any) => r.count));
+
+  const exportCsv = async (kind: string) => {
+    const t = await getToken();
+    const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/reports/export.csv?kind=${kind}&token=${encodeURIComponent(t || "")}`;
+    if (Platform.OS === "web") { (window as any).open(url, "_blank"); }
+    else { Linking.openURL(url); }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }}>
@@ -130,6 +137,19 @@ export default function Reports() {
           style={{ backgroundColor: colors.surfaceInverse, padding: spacing.lg, borderRadius: radius.md, alignItems: "center", marginTop: spacing.sm }}>
           <Text style={{ color: colors.onSurfaceInverse, fontWeight: "700" }}>📋 View Audit Log</Text>
         </Pressable>
+
+        <Text style={{ fontWeight: "700", color: colors.muted, marginTop: spacing.xl, marginBottom: 8 }}>EXPORT CSV</Text>
+        <View style={{ gap: 8 }}>
+          <Pressable testID="csv-services" onPress={() => exportCsv("services")} style={{ backgroundColor: colors.brandTertiary, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary }}>
+            <Text style={{ color: colors.onBrandTertiary, fontWeight: "700" }}>⬇ All Services</Text>
+          </Pressable>
+          <Pressable testID="csv-monthly" onPress={() => exportCsv("revenue-monthly")} style={{ backgroundColor: colors.brandTertiary, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary }}>
+            <Text style={{ color: colors.onBrandTertiary, fontWeight: "700" }}>⬇ Monthly Revenue (12 months)</Text>
+          </Pressable>
+          <Pressable testID="csv-customers" onPress={() => exportCsv("customers")} style={{ backgroundColor: colors.brandTertiary, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary }}>
+            <Text style={{ color: colors.onBrandTertiary, fontWeight: "700" }}>⬇ Customers</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </View>
   );

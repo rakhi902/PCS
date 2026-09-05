@@ -1,0 +1,59 @@
+{
+  "summary": "Retest of HIGH-priority fix: completed-service un-complete guard for non-admin PATCH. Updated /app/backend/tests/test_production_qa.py TestLLocking class to add 7 targeted assertions per the review request. All 50 tests pass (0 failed, 0 skipped). Verified: (1) technician PATCH {status:'pending'} on OWN completed service is blocked (returns 400 'Nothing to update' after allowed-set filter reduces upd to {}) AND DB status stays 'completed'. (2) technician PATCH {payment_status:'paid'} on completed service returns 200 and persists; toggling back to 'unpaid' also 200. (3) mixed {status:'pending', payment_status:'paid'} by technician on completed returns 200 with only payment_status applied — DB status remains 'completed' (acceptable per spec). (4) manager PATCH {status:'pending'} → 400, {charges:5} → 400 (charges stripped by manager branch then upd empty → 400), {payment_status:'paid'} → 200. (5) admin PATCH {charges:2000, payment_status:'paid'} on completed → 200 and BOTH fields persist. Regression: all prior scenarios still pass — end-to-end Termite auto-reminder creation (due_date ≈ +365-7d), termite duplicate prevention, non-termite no reminder, manager permissions & financial stripping, technician permissions & filters, admin edits + audit, AMC generation for daily/fortnightly/monthly/quarterly/custom, AMC contract has null technician_id, reassignment flips pending→assigned, reschedule future=rescheduled/past=overdue, /reports/summary admin-only, CSV export (200/401/403), /files with token, manager dashboard pending_payments, MongoDB persistence, _id never leaked.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PATCH /api/services/{sid} (technician)",
+        "issue": "When a technician sends only disallowed fields (e.g. {status:'pending'} on a completed service), server returns 400 'Nothing to update'. Semantically fine but a 403 'Cannot un-complete' would be clearer for API consumers. Non-blocking."
+      },
+      {
+        "endpoint": "POST /api/services (manager)",
+        "issue": "Response body still contains 'charges' key (forced to 0). Not a leak but asymmetric with GET which strips it."
+      },
+      {
+        "endpoint": "GET /api/files/{path}",
+        "issue": "Any valid JWT (any role) can read any object path if guessed. Prefix + ownership check recommended."
+      },
+      {
+        "endpoint": "POST /api/services/{sid}/photos & /signature",
+        "issue": "No content-type whitelist and no size cap on uploads."
+      },
+      {
+        "endpoint": "GET /api/audit-logs",
+        "issue": "No pagination cursor, no filters, no index on 'at' — will slow at scale."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_production_qa.py",
+    "/app/test_reports/pytest/production_qa_results.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: change 'Nothing to update' 400 to a more explicit 403 with body {detail:'Cannot un-complete service'} when a technician sends only disallowed fields on a completed service.",
+    "Optional MINOR items unchanged from iteration_5: strip 'charges' from manager POST response; harden /files endpoint; add upload validation; audit-logs pagination."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_service (lines 447-485): fix is correct and minimal — for technicians on completed services, allowed-set is reduced to {'payment_status'} only, so any attempt to PATCH 'status' (alone or mixed) is silently filtered and either 400 ('Nothing to update') or 200 with only payment_status applied. Status field is provably unreachable for technicians on completed services.",
+    "Verified admin branch remains fully permissive (no completed-lock for role=='admin').",
+    "Manager on completed: only 'payment_status' allowed; other fields → 400 'Service completed and locked'. Matches spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_production_qa.py (expanded TestLLocking from 2 tests to 8 tests covering the fix + regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (50/50 passed)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Fresh TEST_Cust_* customers, 1 manager (tmgr_*, PIN rotated to 2222), 2 technicians (ttech_t1_*/ttech_t2_*, PIN rotated to 2222), multiple services + AMC contracts, before/during/after photos on primary Termite service. Admin PIN reset to 1234 before run (script embedded in test picks up 9999 fallback).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Before running: `python3 -c \"import bcrypt; from pymongo import MongoClient; MongoClient('mongodb://localhost:27017')['test_database'].users.update_one({'username':'admin'}, {'\\$set': {'pin_hash': bcrypt.hashpw(b'1234', bcrypt.gensalt()).decode(), 'must_change_pin': True}})\"`. Then run: `pytest /app/backend/tests/test_production_qa.py -n 0 -v` (must use -n 0 due to module-scoped S dict). All 8 TestLLocking tests must pass; if any fails, fix regressed.",
+  "rca_of_issue": "PREVIOUS BUG (fixed in this iteration): Technician could un-complete a service. Root cause was server.py update_service technician branch not checking completed status. FIX APPLIED at server.py:453-464 — when user role is technician AND s.get('status')=='completed', the allowed-fields set is restricted to {'payment_status'} only (Cash Collection), preventing any status/medicine/quantity/notes changes post-completion. VERIFIED via 7 new pytest assertions: status un-complete attempts by tech and manager return 4xx and DB state remains 'completed'; payment_status toggling still works for tech/manager; admin remains fully unlocked."
+}

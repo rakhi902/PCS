@@ -1,0 +1,76 @@
+{
+  "summary": "Final production QA for pest-control mgmt backend. Built /app/backend/tests/test_production_qa.py with 44 targeted tests across 16 classes covering every scenario in the review scope. Result: 43 PASSED, 1 SKIPPED (dynamic dependency), 0 failed. Additionally performed a targeted follow-up probe that CONFIRMED one production-blocking bug: a technician can flip a completed service's status back to 'pending' via PATCH /services/{sid} because the completed-lock guard (server.py:462) is only evaluated on the non-technician branch. Other flows (end-to-end termite reminder w/ due_date ~ +365-7 days, termite duplicate prevention, non-termite no reminder, manager permissions and financial stripping, technician permissions & filters, reassignment, pending admin edits + audit log, AMC generation counts for daily/fortnightly/monthly/quarterly/custom, AMC contract has no technician_id, assignment from pending flips status to assigned, reminder computed states, reschedule to future=rescheduled/past=overdue, admin CSV export 200 + non-admin 403 + missing/invalid token 401, /files with token, manager dashboard pending_payments, MongoDB persistence, and _id never present in any list response) all behave exactly as specified.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/services/{sid}",
+        "issue": "Completed-lock is NOT applied to technicians. A technician assigned to a completed service can PATCH status back to 'pending' (verified: returned 200, DB status flipped from 'completed' to 'pending'). Root cause: server.py update_service branches - the 'if user[role]==technician' path (line 453-460) does not check s.get('status')=='completed'. Only the else branch (line 462) rejects with 400 'Service completed and locked' for manager. Recommended fix: after allowed-field filtering for tech, if s.get('status')=='completed' and 'status' in upd, drop 'status' (or 400). Ideally also forbid mutating medicine/quantity/notes once completed unless the intent is to allow post-completion corrections by the same tech; if that IS intended, at minimum the 'status' field should be excluded from tech allowed-set once completed.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/services (manager)",
+        "issue": "Response body from manager-created service still contains 'charges' key (value forced to 0). Not a leak of financial data, but inconsistent with GET /services which strips the key for non-admins. Consider popping 'charges' before returning to manager for symmetry."
+      },
+      {
+        "endpoint": "PATCH /api/services/{sid} (technician)",
+        "issue": "Disallowed fields (e.g. charges) sent by a technician alongside allowed fields are silently dropped and the request returns 200. Consider returning 400 or a warning header when non-tech fields are present so client bugs surface."
+      },
+      {
+        "endpoint": "GET /api/reports/summary",
+        "issue": "daily_services and monthly_services counts use scheduled_date across ALL statuses. If intent is 'services performed' vs 'services scheduled', clarify. Revenue in monthly is correctly filtered by status=completed."
+      },
+      {
+        "endpoint": "GET /api/files/{path}",
+        "issue": "Any authenticated JWT (any role) can read any object path if guessed. UUID prefixes make guessing hard, but consider (a) prefix validation path.startswith(APP_NAME+'/') and (b) for technicians, verify service ownership via signature_path/photos lookup."
+      },
+      {
+        "endpoint": "POST /api/services/{sid}/photos & /signature",
+        "issue": "No content-type whitelist and no size cap. Any binary file (executable, huge blob) can be uploaded and served back through /files."
+      },
+      {
+        "endpoint": "GET /api/audit-logs",
+        "issue": "No pagination cursor, no entity/action filters, no {at:-1} index. Will slow at scale."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_production_qa.py",
+    "/app/test_reports/pytest/production_qa_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix technician completed-lock in server.py update_service (~line 453-460). Simplest patch: after `allowed = {...}` filter, add `if s.get('status') == 'completed' and 'status' in upd: del upd['status']` and/or reject if any lock-worthy field is submitted. Then re-run /app/backend/tests/test_production_qa.py — the diagnostic follow-up probe embedded in the RCA section should return the expected non-200 or preserved 'completed' state.",
+    "MINOR: Strip 'charges' from manager POST /services response for symmetry with GET.",
+    "MINOR: Consider rejecting (400) instead of silently dropping disallowed fields from technician PATCH payloads.",
+    "MINOR: Harden /files endpoint (path prefix validation + service-ownership check for technicians).",
+    "MINOR: Add content-type/size validation to photo & signature uploads."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_service (line 447-478): The technician branch (line 453-460) applies allowed-field filtering but never checks completed status. The else-branch (line 462) does. This asymmetry is the bug. Fix by hoisting the completed-lock check above the role branching, OR by adding it explicitly inside the tech branch. Do NOT rely on filtering alone because 'status' is in the tech-allowed set.",
+    "server.py update_service (line 452): Using inp.dict() (Pydantic v1 style) then filtering None. Should switch to inp.dict(exclude_unset=True) for true partial semantics; a client sending null explicitly currently cannot distinguish 'unset' from 'clear'.",
+    "server.py list_reminders (line 647): computed='rescheduled' only when status='rescheduled' AND due_date >= now. If rescheduled to a past date it becomes 'overdue' silently, hiding the rescheduled state in the computed field.",
+    "server.py create_service line 421-433: manager response still exposes 'charges' key (with value 0) - inconsistent with GET stripping.",
+    "server.py get_file line 535-550: authorization is JWT-only with no scope check. Any valid JWT unlocks any bucket path.",
+    "server.py upload_signature line 502-515: no content-type/size validation.",
+    "Model file server.py 970 lines - single-file; consider splitting into routers (auth/customers/services/amc/reminders/reports/files) once product stabilises."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_production_qa.py (new, 44 tests, 43 pass / 1 skipped)"
+  ],
+  "success_rate": {
+    "backend": "97.7% (43/44 passed, 1 skipped) — plus 1 confirmed HIGH-severity bug outside the passing set",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Creates fresh TEST_Cust_* customers (3), 1 manager (tmgr_*), 2 technicians (ttech_t1_*/ttech_t2_*) with rotated PINs (2222), and multiple services + AMC contracts. Object storage photos uploaded (before/during/after) for the primary Termite flow. No cleanup — test data isolated by unique IDs. Admin PIN handling: reset script provided in review context runs at start; test also falls back to 9999 if a prior run rotated it.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reset admin PIN first: `python3 -c \"import bcrypt; from pymongo import MongoClient; MongoClient('mongodb://localhost:27017')['test_database'].users.update_one({'username':'admin'}, {'\\$set': {'pin_hash': bcrypt.hashpw(b'1234', bcrypt.gensalt()).decode(), 'must_change_pin': True}})\"`. Then run: `pytest /app/backend/tests/test_production_qa.py -n 0 -v`. MUST use -n 0 because a module-scoped S dict shares state across classes. After the tech-completed-lock fix is applied, add an explicit assertion to TestLLocking that PATCH status=pending by tech returns non-200 AND the DB state remains 'completed'; the current test only records observed behavior.",
+  "rca_of_issue": "BUG: Technician can un-complete a service. Reproduction (verified live against http://localhost:8001):\n1) admin login (admin/1234), create tech user + customer + service assigned to tech\n2) admin PATCH status=completed on service\n3) tech PATCH /api/services/{sid} body={\"status\":\"pending\"} → returns 200 {\"ok\":true}\n4) GET /api/services/{sid} → status='pending' (was 'completed')\nRoot cause: server.py update_service, the technician branch at line 453-460 only filters allowed fields ({status, medicine, quantity, technician_notes, payment_status}) but does NOT enforce the completed-lock. The lock is only in the else-branch at line 462: `if s.get('status') == 'completed' and user['role'] != 'admin'`. Because that branch is inside `else`, technicians bypass it entirely.\nMitigation: Move the completed-lock check to before the role branching, e.g.:\n```python\nif s.get('status') == 'completed' and user['role'] != 'admin':\n    # allow tech to update only payment_status/medicine/quantity/technician_notes but never status\n    if user['role'] == 'technician':\n        upd = {k: v for k, v in upd.items() if k in {'medicine','quantity','technician_notes','payment_status'}}\n        if not upd:\n            raise HTTPException(400, 'Service completed and locked')\n    else:\n        raise HTTPException(400, 'Service completed and locked')\n```"
+}

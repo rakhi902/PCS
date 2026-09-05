@@ -29,14 +29,20 @@ export default function ServiceDetail() {
   const [medicine, setMedicine] = useState(""); const [quantity, setQuantity] = useState("");
   const [techNotes, setTechNotes] = useState("");
   const [charges, setCharges] = useState(""); const [paymentStatus, setPaymentStatus] = useState("unpaid");
+  const [customerId, setCustomerId] = useState("");
+  const [serviceType, setServiceType] = useState("");
   const [scheduled, setScheduled] = useState(""); const [assignedTech, setAssignedTech] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
+
+  const { data: allCustomers = [] } = useQuery({ queryKey: ["custs-all"], queryFn: () => api.customers(), enabled: editing });
+  const { data: types = [] } = useQuery({ queryKey: ["types"], queryFn: api.serviceTypes });
 
   useEffect(() => {
     if (s) {
       setMedicine(s.medicine || ""); setQuantity(s.quantity || ""); setTechNotes(s.technician_notes || "");
       setCharges(String(s.charges ?? "")); setPaymentStatus(s.payment_status || "unpaid");
       setScheduled(s.scheduled_date); setAssignedTech(s.technician_id || "");
+      setCustomerId(s.customer_id); setServiceType(s.service_type);
     }
   }, [s]);
 
@@ -70,6 +76,8 @@ export default function ServiceDetail() {
       body.payment_status = paymentStatus;
       body.scheduled_date = scheduled;
       body.technician_id = assignedTech || null;
+      body.customer_id = customerId;
+      body.service_type = serviceType;
       body.medicine = medicine; body.quantity = quantity; body.technician_notes = techNotes;
     }
     await api.updateService(id, body);
@@ -139,6 +147,14 @@ export default function ServiceDetail() {
 
         {editing && canEdit && (
           <>
+            <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>CUSTOMER</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+              {allCustomers.map((c: any) => <Chip key={c.id} testID={`edit-cust-${c.id}`} label={c.name} selected={customerId === c.id} onPress={() => setCustomerId(c.id)} />)}
+            </ScrollView>
+            <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>SERVICE TYPE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+              {types.map((t: any) => <Chip key={t.id} testID={`edit-type-${t.name}`} label={t.name} selected={serviceType === t.name} onPress={() => setServiceType(t.name)} />)}
+            </ScrollView>
             <DateField testID="fld-schedule" label="Scheduled Date" value={scheduled} onChange={setScheduled} mode="datetime" />
             {user?.role === "admin" && <LabeledInput testID="fld-charges" label="Charges (₹)" value={charges} onChangeText={setCharges} keyboardType="numeric" />}
             <Text style={{ fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6 }}>PAYMENT</Text>

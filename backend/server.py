@@ -194,6 +194,37 @@ class SettingsIn(BaseModel):
     google_review_url: Optional[str] = None
     whatsapp_template: Optional[str] = None
 
+async def create_termite_reminder_if_needed(user, service):
+    """After a Termite service is completed, create an Admin reminder 7 days before the same calendar date one year later.
+    Prevent duplicates by checking existing reminders for the same customer/service_type/due_date."""
+    if (service.get("service_type") or "").strip().lower() != "termite":
+        return
+    completed_at = service.get("completed_at") or now_utc().isoformat()
+    try:
+        cd = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+    except Exception:
+        cd = now_utc()
+    due = cd + relativedelta(years=1) - timedelta(days=7)
+    due_iso = due.isoformat()
+    # Prevent duplicates: any reminder for this customer + Termite within +/- 2 days of computed due
+    win_start = (due - timedelta(days=2)).isoformat()
+    win_end = (due + timedelta(days=2)).isoformat()
+    exists = await db.reminders.find_one({
+        "customer_id": service["customer_id"], "service_type": "Termite",
+        "due_date": {"$gte": win_start, "$lte": win_end},
+    })
+    if exists:
+        return
+    r = {
+        "id": new_id(), "customer_id": service["customer_id"], "service_type": "Termite",
+        "due_date": due_iso, "notes": "Annual termite follow-up (auto-created)",
+        "reminder_period_months": 12, "status": "upcoming",
+        "auto_source": "termite_annual", "source_service_id": service["id"],
+        "created_at": now_utc().isoformat(),
+    }
+    await db.reminders.insert_one(r)
+    await audit(user, "reminder", r["id"], "auto_create", {"source": "termite_annual"})
+
 # ---------- Audit ----------
 async def audit(user, entity, entity_id, action, changes=None):
     await db.audit_logs.insert_one({
@@ -440,6 +471,9 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
     if "status" in upd and upd["status"] == "completed":
         upd["completed_at"] = now_utc().isoformat()
     await db.services.update_one({"id": sid}, {"$set": upd})
+    if upd.get("status") == "completed":
+        after = await db.services.find_one({"id": sid})
+        await create_termite_reminder_if_needed(user, after)
     await audit(user, "service", sid, "update", upd)
     return {"ok": True}
 
@@ -456,6 +490,8 @@ async def complete_service(sid: str, inp: TechCompleteIn, user=Depends(get_user)
     upd = {**{k: v for k, v in inp.dict().items() if v is not None},
            "status": "completed", "completed_at": now_utc().isoformat()}
     await db.services.update_one({"id": sid}, {"$set": upd})
+    after = await db.services.find_one({"id": sid})
+    await create_termite_reminder_if_needed(user, after)
     await db.feedback_requests.insert_one({
         "id": new_id(), "service_id": sid, "customer_id": s["customer_id"],
         "status": "pending", "created_at": now_utc().isoformat()

@@ -1,0 +1,35 @@
+{
+  "summary": "Backend-only focused testing for Termite auto-reminder + AMC assignment + Admin edit-pending-service flows. Created a new pytest file /app/backend/tests/test_termite_and_admin_edits.py with 16 targeted tests grouped into 4 classes (setup, termite auto-reminder, AMC pending+assign, admin edits). All 16/16 passed. Verified: (1) Completing a Termite service via POST /api/services/{id}/complete auto-creates a reminder with service_type='Termite', auto_source='termite_annual', status='upcoming', source_service_id=<sid>, and due_date = completed_at + 1 year - 7 days (validated with <120s drift). (2) Completing a second Termite for the same customer within the 4-day dedup window does NOT create a duplicate (exactly 1 termite reminder remains). (3) Completing a non-Termite (Cockroach) service for a fresh customer creates NO auto termite reminder. (4) Admin PATCH /api/services/{id} setting status='completed' on a Termite service also triggers auto-creation (verified via reminder count for a third fresh customer). (5) POST /api/amc frequency=monthly generated >=12 pending services with technician_id=null and amc_id set. (6) PATCH /api/services/{id} with technician_id auto-flips status to 'assigned'. (7) Reassigning to a different technician updates technician_id, keeps the same service id (no duplication), and does not revert status. (8) Admin can edit customer_id, service_type, scheduled_date, and charges on pending/assigned/in_progress services and GET reflects new values.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_termite_and_admin_edits.py",
+    "/app/test_reports/pytest/termite_admin_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py create_termite_reminder_if_needed uses ISO-string range comparison on due_date (win_start/win_end as .isoformat()). Works because all stored due_dates use the same tz-offset format (via now_utc()/relativedelta), but if any reminder is ever inserted with a different offset (e.g. 'Z' vs '+00:00'), lexicographic $gte/$lte on strings can misbehave. Consider normalizing to UTC 'Z' before comparing, or storing datetimes as native BSON dates.",
+    "server.py update_service (PATCH): when technician_id is present but the current status is already 'assigned'/'in_progress', it does not touch status - correct. However it also does not enforce that the new technician exists (no lookup on db.users). A stale/non-existent technician_id would silently persist. Consider validating the technician.",
+    "server.py update_service allows admin to PATCH status='completed' bypassing the photo requirement enforced in /complete. This is intentional per review request but should be documented; consider also creating the feedback_request row from the PATCH path to match /complete (currently only /complete inserts into db.feedback_requests)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_termite_and_admin_edits.py (new, 16 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 in new suite; previous suite bug from iteration_1 unrelated to this scope)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Suite creates fresh TEST_-prefixed customers (3-4 per run), two technicians (randomized usernames), and multiple services + one monthly AMC. Admin PIN rotated to 9999 if it was still 1234 (handled by _login_admin helper with fallback). No cleanup - test data persists but is isolated by unique IDs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run new suite serially: `pytest /app/backend/tests/test_termite_and_admin_edits.py -n 0 -v`. The pytest.ini forces `-n 2 --dist loadscope` which will split classes across workers and break STATE sharing between Test00Setup and later classes - always override with `-n 0` for this file. Termite dedup window is +/-2 days in server.py (line 210-211); the review request mentioned 4 days which matches +/-2. If admin PIN is not 1234 or 9999, update _login_admin() helper. Storage tests will skip cleanly if EMERGENT_LLM_KEY is missing but it was present and working in this run.",
+  "rca_of_issue": "N/A - no bugs found in this scope. All 8 review-request scenarios pass as implemented in server.py::create_termite_reminder_if_needed (line 197-226), server.py::update_service (line 447-478), and server.py::complete_service (line 480-500)."
+}

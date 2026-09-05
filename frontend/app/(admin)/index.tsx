@@ -65,6 +65,7 @@ export default function AdminHome() {
           <QuickAction testID="qa-add-amc" label="+ AMC" onPress={() => router.push("/amc/new")} />
           <QuickAction testID="qa-add-reminder" label="+ Reminder" onPress={() => router.push("/reminders")} />
           <QuickAction testID="qa-users" label="Users" onPress={() => router.push("/users")} />
+          <QuickAction testID="qa-payments" label="Payments" onPress={() => router.push("/payments")} />
           <QuickAction testID="qa-reports" label="Reports" onPress={() => router.push("/reports")} />
         </View>
       </ScrollView>

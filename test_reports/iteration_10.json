@@ -1,0 +1,38 @@
+{
+  "summary": "Backend-only iteration 10: verified new GET /api/payments endpoint + payment_marked_by attribution on PATCH /api/services/{id}. Added /app/backend/tests/test_payments_endpoint.py (14 tests across 5 classes). RESULT: 14/14 PASS. Coverage: (Authz) unauth 401, admin 200 with correct shape (pending, paid, total_pending, total_paid, count_pending, count_paid + type checks), manager 200 with same shape, technician 403. (AMC exclusion) Created an AMC (monthly, ~4 svcs generated); asserted NONE of the AMC-generated service ids appeared in either /payments.pending or /payments.paid. (Grouping/Totals) Non-AMC services with payment_status in {'unpaid','pending'} appear in `pending` and both count_pending and total_pending increment correctly (delta-based, so test is safe against pre-existing data). Non-AMC paid service appears in `paid` with correct total_paid delta. (Attribution) Technician PATCH {payment_status:'paid'} on own completed service → paid-list row contains payment_marked_by=<tech.id>, payment_marked_by_name=<tech.name>, payment_marked_by_role='technician', payment_marked_at (ISO) set; GET /services/{sid} also carries attribution. Admin PATCH → role='admin', name='Owner'. Manager PATCH → role='manager', matching id/name. (Regressions) Photos-optional /complete still returns 200; /customers 403 for technician; Termite auto-reminder still created (exactly one) with auto_source='termite_annual' and reminder_period_months=12 on completion by technician.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payments_endpoint.py",
+    "/app/test_reports/pytest/payments_endpoint.xml"
+  ],
+  "action_items": [
+    "None. All requested scenarios pass. Main agent may proceed to build the UI on top of /api/payments."
+  ],
+  "critical_code_review_comments": [
+    "server.py:798-822 (GET /api/payments) — Correctly gated by require_roles('admin','manager'), so admin/manager 200 and technician 403 both hold. AMC-exclusion query {'$or': [{'amc_id': None}, {'amc_id': {'$exists': False}}]} correctly excludes AMC-generated services (which always have amc_id set at creation time on line 618). Response shape matches the spec: pending, paid, total_pending, total_paid, count_pending, count_paid.",
+    "server.py:479-484 (PATCH /services/{sid} attribution) — payment_marked_by, payment_marked_by_name, payment_marked_by_role, payment_marked_at are only written when payment_status actually changes (correct — avoids clobbering marker on no-op updates). Works for technician (allowed field even on completed service), manager, and admin.",
+    "server.py:613-621 (AMC service generation) — amc_id is unconditionally set and payment_status defaults to 'amc' (neither 'paid' nor 'unpaid'/'pending'), so even if the exclusion filter were missed these rows would not have landed in pending/paid buckets. Defense-in-depth OK.",
+    "Minor observation (non-blocking): /api/payments returns ALL non-AMC services grouped by payment_status regardless of service.status. If the business intent is 'only completed services should show up in payments', filter by status='completed' as well; current implementation intentionally includes pending/assigned rows too, which is consistent with the spec provided (any non-AMC service with unpaid/pending/paid)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_payments_endpoint.py (NEW — 14 tests, 5 classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Module-scoped, unique per run via uuid suffix: TEST_Pay_Cust_<sfx>, TEST_TermitePay_<sfx>; users TESTpaymgr_<sfx> (manager) and TESTpaytec_<sfx> (technician), both PIN 1111→2222. Multiple TEST_ services + one monthly AMC (3-month range → ~4 generated services) created for exclusion assertions.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: `EXPO_BACKEND_URL=http://localhost:8001 pytest /app/backend/tests/test_payments_endpoint.py -n 0 -v`. Tests use delta-based assertions on totals/counts, so they are safe against seed-data drift. If admin/1234 login stops working (must_change_pin enforced by a prior test), reset via bcrypt+pymongo one-liner. NOTE: legacy test_photos_signature_retest.py still asserts old 'photos required' contract — remains stale from iteration 9 and is unrelated to this iteration.",
+  "rca_of_issue": "N/A — feature verification only. Implementation of /api/payments (server.py:798-822) and PATCH attribution block (server.py:479-484) matches spec exactly; no bugs found."
+}

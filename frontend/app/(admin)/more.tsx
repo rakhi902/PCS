@@ -28,6 +28,7 @@ export default function More() {
       <ScreenHeader title="More" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100 }}>
         <Text style={{ color: colors.muted, fontWeight: "700", marginBottom: 8 }}>OPERATIONS</Text>
+        <Row testID="menu-payments" label="Payments" onPress={() => router.push("/payments")} />
         <Row testID="menu-amc" label="AMC Contracts" onPress={() => router.push("/amc")} />
         <Row testID="menu-reminders" label="Reminders" onPress={() => router.push("/reminders")} />
         <Row testID="menu-feedback" label="Feedback" onPress={() => router.push("/feedback")} />

@@ -126,6 +126,7 @@ export const api = {
   completeReminder: (id: string) => req(`/reminders/${id}/complete`, { method: "POST" }),
   rescheduleReminder: (id: string, due_date: string) => req(`/reminders/${id}/reschedule`, { method: "POST", body: JSON.stringify({ due_date }) }),
   auditLogs: () => req("/audit-logs"),
+  payments: () => req("/payments"),
 
   feedback: () => req("/feedback"),
   approveFeedback: (id: string) => req(`/feedback/${id}/approve`, { method: "POST" }),

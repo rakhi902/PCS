@@ -476,6 +476,12 @@ async def update_service(sid: str, inp: ServiceUpdateIn, user=Depends(get_user))
                 upd["status"] = upd.get("status", "assigned")
     if "status" in upd and upd["status"] == "completed":
         upd["completed_at"] = now_utc().isoformat()
+    # Record who marked the payment (whenever payment_status changes)
+    if "payment_status" in upd and upd.get("payment_status") != s.get("payment_status"):
+        upd["payment_marked_by"] = user["id"]
+        upd["payment_marked_by_name"] = user.get("name")
+        upd["payment_marked_by_role"] = user.get("role")
+        upd["payment_marked_at"] = now_utc().isoformat()
     await db.services.update_one({"id": sid}, {"$set": upd})
     if upd.get("status") == "completed":
         after = await db.services.find_one({"id": sid})
@@ -787,6 +793,33 @@ async def technician_dashboard(user=Depends(require_roles("technician"))):
         "scheduled_date": {"$gte": today_end.isoformat()}, "status": {"$in": ["assigned", "pending"]}})
     completed = await db.services.count_documents({"technician_id": user["id"], "status": "completed"})
     return {"today": today, "upcoming": upcoming, "completed": completed}
+
+# ---------- Reports (Admin) ----------
+@api.get("/payments")
+async def list_payments(user=Depends(require_roles("admin", "manager"))):
+    """List one-off (non-AMC) services grouped by payment state.
+    Excludes any service that came from an AMC contract (amc_id set).
+    Shows who marked the payment (technician/admin/manager) and when."""
+    # AMC-generated services are excluded from this list per business rule.
+    query = {"$or": [{"amc_id": None}, {"amc_id": {"$exists": False}}]}
+    rows = await db.services.find(query, {"_id": 0}).sort("scheduled_date", -1).to_list(2000)
+    cids = list({r.get("customer_id") for r in rows if r.get("customer_id")})
+    customers = {c["id"]: c async for c in db.customers.find({"id": {"$in": cids}}, {"_id": 0})}
+    pending, paid = [], []
+    for r in rows:
+        c = customers.get(r.get("customer_id"), {})
+        r["customer_name"] = c.get("name")
+        r["customer_mobile"] = c.get("mobile")
+        ps = (r.get("payment_status") or "unpaid").lower()
+        if ps == "paid":
+            paid.append(r)
+        elif ps in ("unpaid", "pending"):
+            pending.append(r)
+    total_pending = sum(float(r.get("charges") or 0) for r in pending)
+    total_paid = sum(float(r.get("charges") or 0) for r in paid)
+    return {"pending": pending, "paid": paid,
+            "total_pending": total_pending, "total_paid": total_paid,
+            "count_pending": len(pending), "count_paid": len(paid)}
 
 # ---------- Reports (Admin) ----------
 @api.get("/reports/summary")
